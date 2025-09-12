@@ -1,0 +1,2190 @@
+function road_project_main()
+%==========================================================================
+% FRAMEWORK FOR COMPARATIVE ANALYSIS OF MCDM-BASED ROUTE OPTIMIZATION
+% Author: [Hüseyin Pehlivan / Gebze Technical University]
+% Date:   [June 2025]
+% Version: v1.0 (Final Publication-Ready Version)
+%
+% Description:
+% This main script orchestrates the entire workflow for optimal route
+% selection. It integrates a portfolio of MCDM methods (AHP, TOPSIS, VIKOR)
+% and a novel GNN-inspired algorithm (ISPA) within a reproducible GIS-based
+% framework. The process is fully guided by user selections, ensuring
+% flexibility for different scenarios and datasets.
+%
+%==========================================================================
+
+    % Initialize workspace for a clean run
+    clearvars; close all; clc;
+
+    % --- STAGE 1: SETUP AND USER-DRIVEN CONFIGURATION ---
+    fprintf('==========================================================\n');
+    fprintf('   Initializing Comparative Route Optimization Framework\n');
+    fprintf('==========================================================\n\n');
+    
+    % Load centralized analysis parameters (e.g., slope limits, algorithm settings)
+    % This ensures all parameters are defined in one place for easy modification.
+    PARAMS = configure_analysis_parameters();
+
+    % Guide the user through the selection of data and methods
+    [file_path, results_dir_base] = select_input_file();
+    if isempty(file_path), disp('Operation canceled by user.'); return; end
+    
+    available_methods = {'AHP', 'TOPSIS', 'VIKOR', 'ISPA'}; % ISPA is the GNN-based method
+    active_methods = select_analysis_methods(available_methods);
+    if isempty(active_methods), fprintf(2,'No analysis methods selected. Terminating.\n'); return; end
+    
+    weighting_method = select_weighting_method();
+
+    % Create a unique, descriptive folder for this specific analysis run
+    results_dir = sprintf('%s_%s_%s', results_dir_base, weighting_method, strjoin(active_methods,'-'));
+    if ~exist(results_dir, 'dir'), mkdir(results_dir); end
+
+    try
+        % --- STAGE 2: DATA LOADING AND PREPARATION ---
+        fprintf('\n--- STAGE 2: Data Loading & Preparation ---\n');
+        % Load raw data and separate it into coordinates and parameters
+        [data_table, coordinates, parameters, parameter_names] = load_data_robust(file_path);
+        
+        % --- STAGE 3: CRITERIA STANDARDIZATION ---
+        fprintf('\n--- STAGE 3: Criteria Standardization via Fuzzy Reclassification ---\n');
+        
+        % Step 3.1: Interactively define the direction (Benefit/Cost) of each criterion
+        fprintf('Defining criteria direction (Benefit/Cost)...\n');
+        cost_benefit_flags = determine_cost_benefit(parameter_names);
+        
+        % Step 3.2: Convert raw parameters into standardized suitability scores
+        % This is the core reclassification step based on data distribution and user-defined directions.
+        fprintf('Standardizing criteria into suitability classes...\n');
+        [suitability_scores_01, suitability_scores_1_5] = standardize_parameters_to_classes(parameters, parameter_names, cost_benefit_flags);
+        
+        % --- STAGE 4: CRITERIA WEIGHTING ---
+        fprintf('\n--- STAGE 4: Criteria Weighting ---\n');
+        fprintf('Calculating criterion weights using the %s method...\n', weighting_method);
+        
+        % Calculate the final weight vector that will be used by all subsequent methods.
+        % Entropy method uses the raw parameter data for statistical assessment.
+        [final_weights, consistency_ratio] = calculate_weights(weighting_method, parameters, parameter_names);
+        
+        save(fullfile(results_dir, [lower(weighting_method) '_weights.mat']), 'final_weights', 'consistency_ratio', 'parameter_names');
+
+        % --- STAGE 5: PARALLEL OPTIMIZATION ---
+        fprintf('\n--- STAGE 5: Parallel Route Optimization ---\n');
+        
+        % Select Start and End nodes for the pathfinding algorithm
+        fprintf('Selecting Start and End nodes...\n');
+        [start_node, end_node] = get_start_end_nodes_robust(coordinates);
+        
+        % Run the core scoring and pathfinding function for all selected methods
+        fprintf('Executing parallel suitability scoring and pathfinding...\n');
+        [data_table, all_paths, all_costs] = score_and_find_paths(...
+            active_methods, ...
+            data_table, ...
+            suitability_scores_01, ...  % Input for AHP, TOPSIS, ISPA
+            suitability_scores_1_5, ...  % Special input for VIKOR
+            final_weights, ...
+            coordinates, ...
+            start_node, ...
+            end_node, ...
+            PARAMS);
+        
+        % --- STAGE 6: REPORTING AND EVALUATION ---
+        fprintf('\n--- STAGE 6: Reporting and Comprehensive Evaluation ---\n');
+        
+        % 1. Visualize the suitability maps that each method "sees"
+        fprintf('Generating suitability score maps...\n');
+        plot_score_maps(data_table, coordinates, active_methods, results_dir);
+        
+        % 2. Visualize the final, comparative route results
+        fprintf('Generating final route comparison maps...\n');
+        visualize_results(coordinates, all_paths, active_methods, results_dir);
+        
+        % 3. Generate elevation profiles for a detailed topographical comparison
+        fprintf('Generating route elevation profiles...\n');
+        plot_route_profiles(all_paths, coordinates, active_methods, results_dir);
+        
+        % 4. Calculate and display the quantitative comparison table
+        fprintf('Performing quantitative analysis of routes...\n');
+        analysis_table = analyze_and_report_routes(all_paths, all_costs, coordinates, data_table);
+
+        % 4.1. Generate and save the parameter-suitability overlay maps
+      %  fprintf('Generating parameter-suitability overlay maps...\n');
+      %  plot_suitability_on_parameters(data_table, coordinates, active_methods, results_dir);
+
+        % 5. Save all numerical results to a multi-sheet Excel file
+        fprintf('Saving comprehensive report to Excel...\n');
+        save_results_to_excel_dynamic(fullfile(results_dir, 'Optimization_Report.xlsx'), ...
+            data_table, parameter_names, final_weights, consistency_ratio, ...
+            all_paths, all_costs, active_methods, weighting_method, analysis_table);
+
+        fprintf('\n----------------------------------------------------------\n');
+        fprintf('  PROCESS COMPLETED SUCCESSFULLY\n');
+        fprintf('  All results have been saved to the folder:\n  %s\n', results_dir);
+        fprintf('----------------------------------------------------------\n');
+
+    catch ME
+        fprintf(2, '\n==================== FATAL ERROR ENCOUNTERED ====================\n');
+        fprintf(2, 'MESSAGE: %s\n', ME.message);
+        fprintf(2, '-----------------------------------------------------------------\n');
+        if ~isempty(ME.stack)
+            fprintf(2, 'The error occurred in:\n');
+            fprintf(2, '  -> File: %s\n', ME.stack(1).file);
+            fprintf(2, '  -> Function: %s\n', ME.stack(1).name);
+            fprintf(2, '  -> Line: %d\n', ME.stack(1).line);
+        end
+        fprintf(2, '=================================================================\n');
+    end
+end
+
+%==========================================================================
+%                       MAIN HELPER FUNCTIONS
+%==========================================================================
+
+function PARAMS = configure_analysis_parameters()
+    % Centralizes all tunable parameters of the analysis.
+    fprintf('Configuring analysis parameters...\n');
+    PARAMS.MAX_ALLOWED_SLOPE = 12.0;         % Max permissible slope (%) for a path segment.
+    PARAMS.UPHILL_PENALTY_FACTOR = 0.20;      % Additional cost factor for uphill segments (e.g., 0.2 = 20% more costly).
+    PARAMS.NEIGHBORHOOD_SEARCH_DISTANCE = 100;% Search radius (m) for connecting nodes in the network graph.
+    PARAMS.GNN_ITERATIONS = 3;               % Number of iterations for the GNN score propagation.
+    PARAMS.GAMMA_AHP = 2;                    % Contrast enhancement factor for AHP.
+    PARAMS.GAMMA_TOPSIS = 2;                 % Contrast enhancement factor for TOPSIS.
+    PARAMS.GAMMA_VIKOR = 1;                  % VIKOR often has better score distribution, no enhancement needed.C
+    PARAMS.GAMMA_GNN = 1;                    % GNN self-enhances through propagation.
+    PARAMS.COST_PENALTY_LAMBDA = 15;         % Multiplier for how much low suitability scores penalize path cost.
+end
+
+
+%% 📌 5. Ham Parametreleri Bilimsel Uygunluk Yüzeylerine Dönüştürme (NİHAİ UZMAN TABANLI VERSİYON)
+function suitability_surfaces = create_suitability_surfaces(parameters, parameter_names)
+    % This function converts raw parameter data into standardized [0, 1] 
+    % suitability surfaces using expert-defined Fuzzy Membership Functions.
+    % 0 = Completely Unsuitable, 1 = Perfectly Suitable.
+    
+    fprintf('   -> Converting raw parameters to Suitability Surfaces using Fuzzy Standardization...\n');
+    
+    % --- UZMAN TANIMLI EŞİK DEĞERLERİ (Bu bölüm makalede savunulmalıdır) ---
+    % Slope (Eğim)
+    SLOPE_IDEAL = 0.0;          % %0 eğim en iyi durumdur (uygunluk=1).
+    SLOPE_UNACCEPTABLE = 25.0;  % %12'den fazla eğim kabul edilemez (uygunluk=0).
+    
+    % Road Proximity (Yola Yakınlık)
+    ROAD_IDEAL_DIST = 0.0;      % Yolun tam üzerinde olmak en iyi durumdur (uygunluk=1).
+    ROAD_MAX_BENEFIT_DIST = 500.0; % Yoldan 500m'den fazla uzaklaşınca faydası kalmaz (uygunluk=0).
+    
+    % Settlement Proximity (Yerleşime Yakınlık)
+    SETTLEMENT_BUFFER_DIST = 200.0; % Yerleşime 200m'den yakın olmak kabul edilemez (uygunluk=0).
+    SETTLEMENT_SAFE_DIST = 1000.0;  % 1 km'den uzakta olmak tamamen güvenlidir (uygunluk=1).
+    
+    % Sensitive Area Proximity (Hassas Alana Yakınlık)
+    SENSITIVE_BUFFER_DIST = 300.0; % Hassas alana 500m'den yakın olmak kabul edilemez (uygunluk=0).
+    SENSITIVE_SAFE_DIST = 1000.0; % 1.5 km'den uzakta olmak tamamen güvenlidir (uygunluk=1).
+    % --------------------------------------------------------------------
+
+    [~, num_criteria] = size(parameters);
+    suitability_surfaces = zeros(size(parameters));
+
+    for i = 1:num_criteria
+        col_data = parameters(:, i);
+        name = lower(parameter_names{i});
+        suitability = zeros(size(col_data));
+
+        if contains(name, 'slope_percent')
+            % Kural 1: Eğim için Doğrusal Azalan Fonksiyon (Maliyet)
+            ideal = SLOPE_IDEAL; unacceptable = SLOPE_UNACCEPTABLE;
+            mask = col_data > ideal & col_data < unacceptable;
+            suitability(mask) = 1 - (col_data(mask) - ideal) / (unacceptable - ideal);
+            suitability(col_data <= ideal) = 1;
+            suitability(col_data >= unacceptable) = 0;
+            
+        elseif contains(name, 'roadproximity_m')
+            % Kural 2: Yola Uzaklık için Doğrusal Azalan Fonksiyon (Düşük mesafe = İyi)
+            ideal = ROAD_IDEAL_DIST; unacceptable = ROAD_MAX_BENEFIT_DIST;
+            mask = col_data > ideal & col_data < unacceptable;
+            suitability(mask) = 1 - (col_data(mask) - ideal) / (unacceptable - ideal);
+            suitability(col_data <= ideal) = 1;
+            suitability(col_data >= unacceptable) = 0;
+
+        elseif contains(name, 'settlementproximity_m')
+            % Kural 3: Yerleşime Uzaklık için Doğrusal Artan Fonksiyon (Yüksek mesafe = İyi)
+            unacceptable = SETTLEMENT_BUFFER_DIST; ideal = SETTLEMENT_SAFE_DIST;
+            mask = col_data > unacceptable & col_data < ideal;
+            suitability(mask) = (col_data(mask) - unacceptable) / (ideal - unacceptable);
+            suitability(col_data <= unacceptable) = 0;
+            suitability(col_data >= ideal) = 1;
+
+        elseif contains(name, 'sensitiveareaproximity_m')
+            % Kural 4: Hassas Alana Uzaklık için Doğrusal Artan Fonksiyon (Yüksek mesafe = İyi)
+            unacceptable = SENSITIVE_BUFFER_DIST; ideal = SENSITIVE_SAFE_DIST;
+            mask = col_data > unacceptable & col_data < ideal;
+            suitability(mask) = (col_data(mask) - unacceptable) / (ideal - unacceptable);
+            suitability(col_data <= unacceptable) = 0;
+            suitability(col_data >= ideal) = 1;
+            
+        else
+            % Yedek mekanizma: Tanımlanmayan bir parametre varsa uyar ve basit normalizasyon yap
+            warning('"%s" için özel bir Fuzzy kuralı tanımlanmamış. Basit min-max normalizasyonu kullanılıyor.', parameter_names{i});
+            min_val = min(col_data); range = max(col_data) - min_val;
+            % Yönü bilmediğimiz için, daha yüksek değerin daha iyi olduğunu varsayalım (Fayda)
+            suitability = (col_data - min_val) / (range + eps);
+        end
+        
+        suitability_surfaces(:, i) = suitability;
+    end
+    
+    fprintf('   -> Tüm parametreler, [0, 1] arasında standartlaştırılmış uygunluk skorlarına dönüştürüldü.\n');
+end
+
+function [weights, cr] = calculate_weights(method, parameters_raw, param_names)
+    % Bu fonksiyon, seçilen yönteme göre kriter ağırlıklarını hesaplar.
+    % Herhangi bir harici değişkene erişimi yoktur.
+    
+    cr = NaN;
+    num_criteria = length(param_names);
+
+    if strcmpi(method, 'AHP')
+        fprintf('   -> Calculating subjective weights using AHP method...\n');
+        if num_criteria < 2
+            weights = ones(num_criteria, 1); % Tek kriter varsa ağırlığı 1'dir.
+        else
+            comparison_matrix = get_ahp_pairwise_comparisons(param_names);
+            [weights_vector, cr_val] = calculate_ahp_weights(comparison_matrix);
+            weights = weights_vector;
+            cr = cr_val;
+        end
+        fprintf('      -> AHP Weights: %s (CR: %.4f)\n', mat2str(weights', 4), cr);
+        
+    elseif strcmpi(method, 'Entropy')
+        fprintf('   -> Calculating objective weights using Entropy method...\n');
+        % Entropi'ye SADECE parametreleri gönderiyoruz.
+        weights_vector = calculate_entropy_weights(parameters_raw);
+        weights = weights_vector;
+        fprintf('      -> Entropy Weights: %s\n', mat2str(weights', 4));
+    
+    else
+        error('Unknown weighting method specified: %s', method);
+    end
+    
+    % SON KONTROL: Çıktının bir SÜTUN VEKTÖRÜ olduğundan ve boyutunun
+    % doğru olduğundan emin ol. Bu, tüm sorunları engeller.
+    if ~iscolumn(weights)
+        weights = weights'; % Eğer satır vektörü ise sütuna çevir
+    end
+    
+    if size(weights, 1) ~= num_criteria || size(weights, 2) ~= 1
+        error('Weight calculation error: Final weights must be a [%d x 1] column vector.', num_criteria);
+    end
+end
+
+% =========================================================================
+%                        YARDIMCI FONKSİYONLAR
+% =========================================================================
+
+%% --- Adım 1: Kullanıcı Seçimleri için Fonksiyonlar ---
+
+function [file_path, results_dir_base] = select_input_file()
+    fprintf('1. Lütfen parametreleri içeren Excel dosyasını seçin...\n');
+    [file, path] = uigetfile({'*.xlsx';'*.csv'}, 'Parametre Dosyasını Seçin');
+    if isequal(file, 0)
+        disp('İşlem kullanıcı tarafından iptal edildi.');
+        file_path = []; results_dir_base = [];
+        return;
+    end
+    file_path = fullfile(path, file);
+    [~, name, ~] = fileparts(file);
+    results_dir_base = fullfile(path, ['results_' name]);
+end
+
+function active_methods = select_analysis_methods(available_methods)
+    question = 'Lütfen kullanmak istediğiniz analiz yöntemlerini seçin:';
+    [idx, tf] = listdlg('PromptString', question, 'ListString', available_methods, 'Name', 'Yöntem Seçimi');
+    if ~tf
+        active_methods = {};
+        return;
+    end
+    active_methods = available_methods(idx);
+    fprintf('Seçilen Yöntemler: %s\n', strjoin(active_methods, ', '));
+end
+
+function weighting_method = select_weighting_method()
+    question = 'Lütfen kriter ağırlıklandırma yöntemini seçin:';
+    options = {'AHP (Subjektif)', 'Entropi (Objektif)'};
+    [idx, tf] = listdlg('PromptString', question, 'SelectionMode', 'single', 'ListString', options, 'Name', 'Ağırlıklandırma Seçimi');
+    if ~tf || idx == 2
+        weighting_method = 'Entropy';
+    else
+        weighting_method = 'AHP';
+    end
+    fprintf('Seçilen Ağırlıklandırma Yöntemi: %s\n', weighting_method);
+end
+
+
+
+%% --- VERİ YÜKLEME VE İŞLEME YARDIMCI FONKSİYONLARI ---
+
+function [data, coordinates, parameters, parameter_names] = load_data_robust(file_path)
+    % Bu fonksiyon, bir Excel dosyasını okur, temizler, eksik verileri
+    % yönetir ve analiz için koordinat, parametre matrislerini ayırır.
+    
+    fprintf('   -> Veri yükleniyor (load_data_robust): %s\n', file_path);
+
+    % Adım 1: Okuma Seçeneklerini Ayarla
+    try
+        opts = detectImportOptions(file_path, 'PreserveVariableNames', true);
+        % Tüm veriyi string olarak oku, sonra manuel dönüştür. Bu en güvenli yöntemdir.
+        opts = setvartype(opts, 'string');
+    catch ME_opts
+         error('Excel dosyası okuma seçenekleri belirlenemedi: %s\n   Dosya yolu doğru mu?: %s', ME_opts.message, file_path);
+    end
+
+    % Adım 2: Veriyi Oku
+    try
+        data = readtable(file_path, opts);
+    catch ME_read
+        error('Excel dosyası okunamadı: %s\n   Hata: %s', file_path, ME_read.message);
+    end
+
+    % Adım 3: Sütun Adlarını Temizle
+    data.Properties.VariableNames = matlab.lang.makeValidName(data.Properties.VariableNames, 'ReplacementStyle', 'underscore');
+    current_var_names = data.Properties.VariableNames;
+
+    % Adım 4: Veri Tiplerini Dönüştür
+    missing_value_strings = {'na', 'n/a', '', 'nan', '<boş>', '-', 'null'};
+    for i = 1:length(current_var_names)
+        var_name = current_var_names{i};
+        col_data_str = data.(var_name);
+        is_missing_val = ismember(lower(strtrim(col_data_str)), missing_value_strings);
+        col_data_str(is_missing_val) = "NaN";
+        col_data_str = strrep(col_data_str, ',', '.');
+        num_col = str2double(col_data_str);
+        if ~all(isnan(num_col)) || all(is_missing_val)
+             data.(var_name) = num_col;
+        end
+    end
+
+    % Adım 5: Eksik Sayısal Verileri Doldur (Sürüm Uyumlu Manuel Yöntem)
+    numeric_col_names = current_var_names(varfun(@isnumeric, data, 'OutputFormat', 'uniform'));
+    
+    if ~isempty(numeric_col_names)
+        nan_found_in_data = false;
+        for i = 1:length(numeric_col_names)
+            col_name = numeric_col_names{i};
+            col_data = data.(col_name);
+            
+            if any(isnan(col_data))
+                if ~nan_found_in_data
+                    fprintf('      Uyarı: Sayısal sütunlarda eksik değerler (NaN) bulundu. Sütun ortalaması ile dolduruluyor.\n');
+                    nan_found_in_data = true;
+                end
+                
+                mean_val = mean(col_data, 'omitnan');
+                if isnan(mean_val), mean_val = 0; end % Eğer tüm sütun NaN ise ortalama 0 olsun
+                
+                nan_indices = isnan(col_data);
+                data.(col_name)(nan_indices) = mean_val;
+            end
+        end
+    end
+
+    % Adım 6: Çıktıları Ayır
+    [x_col, y_col, z_col] = find_coord_columns(current_var_names);
+    
+    % Hariç tutulacak sütunları (ID ve koordinatlar) belirle (Sürüm Uyumlu Yöntem)
+    id_patterns = {'nn', 'objectid', 'id', 'nodeid', 'node', 'noktano', 'fod', 'no'};
+    coord_names = {x_col, y_col, z_col};
+    
+    current_var_names_lower = lower(current_var_names);
+    id_indices = ismember(current_var_names_lower, id_patterns);
+    id_col_found = current_var_names(id_indices);
+    
+    all_excluded_names = unique([coord_names, id_col_found]);
+
+    % Parametreleri al: Sayısal olan VE hariç tutulmayanlar
+    is_numeric_final = varfun(@isnumeric, data, 'OutputFormat', 'uniform');
+    is_excluded_final = ismember(current_var_names, all_excluded_names);
+    
+    param_indices_logical = is_numeric_final & ~is_excluded_final;
+    
+    parameters = data{:, param_indices_logical};
+    parameter_names = current_var_names(param_indices_logical);
+    coordinates = data{:, coord_names};
+    
+    if isempty(parameter_names)
+        warning('Hiç analiz parametresi bulunamadı. Lütfen Excel dosyasındaki parametre sütunlarını kontrol edin.');
+    end
+end
+
+function [x_col, y_col, z_col] = find_coord_columns(var_names)
+    % Sütun adları arasında X, Y, Z'yi esnek ve sürüm uyumlu bir şekilde bulur
+    x_patterns = {'x', 'easting'}; % Her şeyi küçük harfe çevir
+    y_patterns = {'y', 'northing'};
+    z_patterns = {'z', 'elevation', 'h'};
+    
+    var_names_lower = lower(var_names); % Sütun adlarını bir kez küçük harfe çevir
+    
+    x_col_idx = find(contains(var_names_lower, x_patterns), 1, 'first');
+    y_col_idx = find(contains(var_names_lower, y_patterns), 1, 'first');
+    z_col_idx = find(contains(var_names_lower, z_patterns), 1, 'first');
+
+    if isempty(x_col_idx) || isempty(y_col_idx) || isempty(z_col_idx)
+        error('Girdi dosyasında X, Y, Z (veya benzeri) koordinat sütun adlarından biri bulunamadı.');
+    end
+    
+    % Orijinal sütun adlarını indislerden al
+    x_col = var_names{x_col_idx};
+    y_col = var_names{y_col_idx};
+    z_col = var_names{z_col_idx};
+end
+
+
+function [fig, ax] = plot_3d_surface(coordinates)
+    % 3D bir yüzey ve noktaları çizer, seçim için kullanılır.
+    fig = figure('Name', 'Nokta Seçim Ekranı', 'WindowState', 'maximized');
+    ax = axes(fig);
+    scatter3(ax, coordinates(:,1), coordinates(:,2), coordinates(:,3), 30, coordinates(:,3), 'filled');
+    xlabel('X'); ylabel('Y'); zlabel('Z');
+    axis equal; grid on; colorbar;
+    title('3D Nokta Haritası');
+    view(3);
+end
+
+function [start_node, end_node] = select_points_on_graph_v2(fig, ax, coordinates)
+    % Grafik üzerinden 2 nokta seçilmesini sağlar.
+    fprintf('   -> Grafik üzerinde Başlangıç (A) ve Bitiş (B) noktalarını tıklayarak seçin.\n');
+    fig.UserData.selected_indices = [];
+    fig.UserData.coordinates = coordinates;
+    fig.UserData.point_handles = [];
+    set(fig, 'WindowButtonDownFcn', @onpick_callback);
+    uiwait(fig); % Kullanıcı seçim yapana kadar bekle
+    selected_indices_local = fig.UserData.selected_indices;
+    if length(selected_indices_local) < 2, error('Başlangıç ve Bitiş noktaları seçilmedi.'); end
+    start_node = selected_indices_local(1);
+    end_node = selected_indices_local(2);
+    set(fig, 'WindowButtonDownFcn', []);
+    if isfield(fig.UserData, 'point_handles'), delete(fig.UserData.point_handles); end
+end
+
+function onpick_callback(fig, ~)
+    % Nokta seçim callback fonksiyonu.
+    ax = gca;
+    coords = fig.UserData.coordinates;
+    selected_indices = fig.UserData.selected_indices;
+    
+    pt_raw = get(ax, 'CurrentPoint');
+    click_point = pt_raw(1,:);
+    distances = sqrt(sum((coords - click_point).^2, 2));
+    [~, closest_idx] = min(distances);
+
+    if ~ismember(closest_idx, selected_indices)
+        selected_indices = [selected_indices, closest_idx];
+        fig.UserData.selected_indices = selected_indices;
+        
+        hold(ax, 'on');
+        h = plot3(ax, coords(closest_idx,1), coords(closest_idx,2), coords(closest_idx,3), ...
+                  'ro', 'MarkerSize', 12, 'MarkerFaceColor', 'r');
+        fig.UserData.point_handles = [fig.UserData.point_handles, h];
+        hold(ax, 'off');
+        
+        if length(selected_indices) == 1, disp('   -> Başlangıç noktası seçildi.');
+        elseif length(selected_indices) == 2, disp('   -> Bitiş noktası seçildi. Pencere kapatılabilir veya devam edilebilir.'); uiresume(fig);
+        end
+    end
+end
+
+function [X_grid, Y_grid, Z_grid] = create_dem_grid(coordinates)
+    % Koordinatlardan enterpolasyonla bir DEM gridi oluşturur.
+    grid_res = (max(range(coordinates(:,1:2))) / 100); % Dinamik çözünürlük
+    xi_dem = min(coordinates(:,1)):grid_res:max(coordinates(:,1));
+    yi_dem = min(coordinates(:,2)):grid_res:max(coordinates(:,2));
+    [X_grid, Y_grid] = meshgrid(xi_dem, yi_dem);
+    
+    F_dem = scatteredInterpolant(coordinates(:,1), coordinates(:,2), coordinates(:,3), 'natural', 'none');
+    Z_grid = F_dem(X_grid, Y_grid);
+    Z_grid = fillmissing(Z_grid, 'nearest', 'EndValues','nearest');
+end
+
+
+function cost_benefit_flags = determine_cost_benefit(parameter_names)
+    % Bu fonksiyon, kullanıcıya her bir parametrenin yönünü (Fayda/Maliyet)
+    % daha anlaşılır sorularla ve önerilerle belirletir.
+    
+    cost_benefit_flags = zeros(1, length(parameter_names));
+    
+    fprintf('   Lütfen her parametrenin yönünü belirleyin.\n');
+    fprintf('   ---------------------------------------------------\n');
+    
+    for i = 1:length(parameter_names)
+        name = parameter_names{i};
+        name_lower = lower(name);
+        
+        % --- YENİ: Otomatik Öneri Mekanizması ---
+        suggested_choice = '';
+        suggestion_text = '';
+        
+        if contains(name_lower, 'egim') || contains(name_lower, 'slope')
+            suggested_choice = 'M';
+            suggestion_text = ' (Öneri: M - Düşük eğim genellikle daha iyidir)';
+        elseif contains(name_lower, {'yol', 'road'}) && contains(name_lower, {'uzaklik', 'proximity'})
+            suggested_choice = 'M';
+            suggestion_text = ' (Öneri: M - Yola olan UZAKLIĞIN düşük olması genellikle daha iyidir)';
+        elseif contains(name_lower, 'yol') && ~contains(name_lower, {'uzaklik', 'proximity'})
+            % Bu, 0/1 gibi bir parametre olabilir
+            suggested_choice = 'F';
+            suggestion_text = ' (Öneri: F - Mevcut yol kullanımı (1) genellikle daha iyidir)';
+        elseif contains(name_lower, {'yerlesim', 'settlement', 'hassas', 'sensitive'})
+            suggested_choice = 'F';
+            suggestion_text = ' (Öneri: F - Bu nesnelere olan UZAKLIĞIN yüksek olması genellikle daha iyidir)';
+        end
+        
+        % --- YENİ: Daha Anlaşılır Sorular ---
+        fprintf('   Kriter: "%s"\n', name);
+        question = '     Bu kriter için YÜKSEK bir değer mi daha iyi (Fayda), yoksa DÜŞÜK bir değer mi (Maliyet)?';
+        
+        prompt = sprintf('%s\n     Seçiminiz (F/M)%s: ', question, suggestion_text);
+        
+        while true
+            choice = lower(input(prompt, 's'));
+            
+            % Eğer kullanıcı sadece Enter'a basarsa, öneriyi kullan
+            if isempty(choice) && ~isempty(suggested_choice)
+                choice = lower(suggested_choice);
+                fprintf('%s\n', choice); % Kullanıcının ne seçildiğini görmesi için
+            end
+
+            if strcmp(choice, 'f')
+                cost_benefit_flags(i) = 1; % Fayda
+                fprintf('     -> Yön: FAYDA olarak ayarlandı.\n\n');
+                break;
+            elseif strcmp(choice, 'm')
+                cost_benefit_flags(i) = -1; % Maliyet
+                fprintf('     -> Yön: MALİYET olarak ayarlandı.\n\n');
+                break;
+            else
+                fprintf(2, '     Geçersiz giriş. Lütfen sadece "F" veya "M" girin (veya öneriyi kabul etmek için Enter''a basın).\n');
+            end
+        end
+    end
+    fprintf('   ---------------------------------------------------\n');
+    fprintf('   -> Nihai Fayda/Maliyet Yönleri: %s\n', mat2str(cost_benefit_flags));
+end
+
+%% --- Adım 4 için Yardımcı Fonksiyon (NİHAİ VE EN SAĞLAM VERSİYON) ---
+
+function [start_node, end_node] = get_start_end_nodes_robust(coordinates)
+    % Kullanıcıya başlangıç/bitiş noktalarını grafik veya numara girişi ile seçtirir.
+    
+    question = 'Başlangıç ve Bitiş noktalarını nasıl seçmek istersiniz?';
+    title_str = 'Nokta Seçim Yöntemi';
+    btn1 = 'Grafikten İnteraktif Seçim';
+    btn2 = 'Numara Girerek Manuel Seçim';
+    default_option = btn1;
+    
+    answer = questdlg(question, title_str, btn1, btn2, default_option);
+    
+    num_nodes = size(coordinates, 1);
+    start_node = []; 
+    end_node = [];
+
+    switch answer
+        case btn2 % Manuel (Numara Girerek) Seçim
+            prompt = {
+                sprintf('Başlangıç Düğüm İNDİSİNİ Girin (1 ile %d arasında):', num_nodes), ...
+                sprintf('Bitiş Düğüm İNDİSİNİ Girin (1 ile %d arasında):', num_nodes)
+            };
+            dlg_title = 'Manuel Düğüm Girişi';
+            
+            while true % Geçerli bir giriş alınana kadar döngü
+                user_input = inputdlg(prompt, dlg_title, [1 60], {'1', num2str(num_nodes)});
+                if isempty(user_input), error('Düğüm seçimi kullanıcı tarafından iptal edildi.'); end
+                
+                start_val = str2double(user_input{1});
+                end_val = str2double(user_input{2});
+                
+                is_valid = ~isnan(start_val) && ~isnan(end_val) && ...
+                           (start_val >= 1) && (start_val <= num_nodes) && ...
+                           (end_val >= 1) && (end_val <= num_nodes) && ...
+                           (start_val ~= end_val) && ...
+                           (floor(start_val) == start_val) && (floor(end_val) == end_val);
+                
+                if is_valid
+                    start_node = start_val;
+                    end_node = end_val;
+                    break; 
+                else
+                    uiwait(warndlg('Geçersiz giriş. Lütfen belirtilen aralıkta, birbirinden farklı ve tamsayı olan düğüm indisleri girin.', 'Hata', 'modal'));
+                end
+            end
+
+        case btn1 % Grafik Üzerinden Seçim
+            fig_select = figure('Name', 'Nokta Seçim Ekranı', 'WindowState', 'maximized');
+            ax_select = axes(fig_select);
+            scatter(ax_select, coordinates(:,1), coordinates(:,2), 15, 'k.');
+            axis(ax_select, 'equal', 'tight');
+            grid(ax_select, 'on');
+            % title(ax_select, 'Önce BAŞLANGIÇ, sonra BİTİŞ noktasını tıklayın', 'FontSize', 16);
+            % xlabel(ax_select, 'X Koordinatı'); ylabel(ax_select, 'Y Koordinatı');
+            % 
+
+            title(ax_select, 'Select START (first click) and END (second click) Nodes', 'FontSize', 14);
+            
+            % --- YENİ ETİKETLER ---
+            xlabel(ax_select, 'Easting (m)');
+            ylabel(ax_select, 'Northing (m)');
+            
+            % [start_node, end_node] = select_points_on_graph_2d(fig_select, ax_select, coordinates);
+            fprintf('   -> Lütfen grafik üzerinde önce BAŞLANGIÇ, sonra BİTİŞ noktasını seçin.\n');
+
+
+            % ginput(2) komutu, kullanıcıdan 2 nokta alana kadar bekler.
+            try
+                [x, y] = ginput(2);
+            catch
+                if isvalid(fig_select), close(fig_select); end
+                error('Grafik üzerinden nokta seçimi sırasında bir hata oluştu veya işlem iptal edildi.');
+            end
+
+            % Seçilen ilk noktaya en yakın düğüm indisini bul (Başlangıç)
+            distances1 = sqrt(sum((coordinates(:,1:2) - [x(1), y(1)]).^2, 2));
+            [~, start_node] = min(distances1);
+            
+            % Seçilen ikinci noktaya en yakın düğüm indisini bul (Bitiş)
+            distances2 = sqrt(sum((coordinates(:,1:2) - [x(2), y(2)]).^2, 2));
+            [~, end_node] = min(distances2);
+
+            if start_node == end_node
+                if isvalid(fig_select), close(fig_select); end
+                error('Başlangıç ve Bitiş noktaları aynı olamaz. Lütfen işlemi yeniden başlatın.');
+            end
+            
+            % Seçimleri grafikte göster
+            hold(ax_select, 'on');
+            plot(ax_select, coordinates(start_node,1), coordinates(start_node,2), 'yp', 'MarkerSize', 20, 'MarkerFaceColor', 'y');
+            plot(ax_select, coordinates(end_node,1), coordinates(end_node,2), 'cs', 'MarkerSize', 16, 'MarkerFaceColor', 'c');
+            hold(ax_select, 'off');
+            fprintf('   -> Seçim tamamlandı. Başlangıç İndisi: %d, Bitiş İndisi: %d\n', start_node, end_node);
+            pause(1.5); % Kullanıcının seçimi görmesi için bekle
+            if isvalid(fig_select), close(fig_select); end
+
+        case '' % Kullanıcı pencereyi kapattıysa
+            error('Düğüm seçimi kullanıcı tarafından iptal edildi.');
+    end
+end
+function [start_node, end_node] = select_points_on_graph_2d(fig, ax, coordinates)
+    % SADECE 2D GRAFİK ÜZERİNDEN GÜVENLİ NOKTA SEÇİMİ
+    fprintf('   -> Lütfen grafik üzerinde 2 nokta seçin.\n');
+    hold(ax, 'on');
+    
+    start_node = [];
+    end_node = [];
+
+    % İlk noktayı al
+    uiwait(msgbox('Lütfen Başlangıç Noktasını seçin ve Enter''a basın.', 'Adım 1/2', 'modal'));
+    [x1, y1, button1] = ginput(1);
+    if isempty(button1), error('Nokta seçimi iptal edildi.'); end % Kullanıcı iptal ettiyse
+    
+    plot(ax, x1, y1, 'yp', 'MarkerSize', 20, 'MarkerFaceColor', 'y', 'MarkerEdgeColor','k');
+    distances1 = sqrt(sum((coordinates(:,1:2) - [x1, y1]).^2, 2));
+    [~, start_node] = min(distances1);
+    text(ax, coordinates(start_node,1), coordinates(start_node,2), '  BAŞLANGIÇ', 'Color', 'k', 'FontWeight', 'bold');
+    fprintf('   -> Başlangıç Noktası (İndis: %d) seçildi.\n', start_node);
+
+    % İkinci noktayı al
+    uiwait(msgbox('Lütfen Bitiş Noktasını seçin ve Enter''a basın.', 'Adım 2/2', 'modal'));
+    [x2, y2, button2] = ginput(1);
+    if isempty(button2), error('Nokta seçimi iptal edildi.'); end % Kullanıcı iptal ettiyse
+
+    plot(ax, x2, y2, 'cs', 'MarkerSize', 16, 'MarkerFaceColor', 'c', 'MarkerEdgeColor','k');
+    distances2 = sqrt(sum((coordinates(:,1:2) - [x2, y2]).^2, 2));
+    [~, end_node] = min(distances2);
+    
+    % Bitiş noktasının başlangıçla aynı olmamasını kontrol et
+    if start_node == end_node
+        error('Başlangıç ve Bitiş noktaları aynı olamaz. Lütfen işlemi yeniden başlatın.');
+    end
+    
+    text(ax, coordinates(end_node,1), coordinates(end_node,2), '  BİTİŞ', 'Color', 'k', 'FontWeight', 'bold');
+    fprintf('   -> Bitiş Noktası (İndis: %d) seçildi.\n', end_node);
+    
+    hold(ax, 'off');
+    pause(1); 
+end
+
+
+% 📌 3. Parametre Normalizasyonu (Fayda/Maliyet Yönlü)
+function suitability_maps = normalize_parameters_cost_benefit(parameters, parameter_names, cost_benefit_flags)
+    % Bu fonksiyon, her bir parametre sütununu, kendi doğasına uygun
+    % bir şekilde [0, 1] arasında bir "uygunluk haritasına" dönüştürür.
+    % 1 = En uygun, 0 = En az uygun.
+    
+    fprintf('   -> Parametreler, uygunluk haritalarına dönüştürülüyor...\n');
+    
+    [~, num_criteria] = size(parameters);
+    suitability_maps = zeros(size(parameters));
+
+    for i = 1:num_criteria
+        col_data = parameters(:, i);
+        flag = cost_benefit_flags(i);
+        name = parameter_names{i};
+        
+        % --- KRİTERİN TÜRÜNE GÖRE FARKLI NORMALİZASYON ---
+        
+        % Eğer 'MevcutYolKullanimi' gibi ikili bir parametre ise:
+        if length(unique(col_data)) == 2 && all(ismember(unique(col_data), [0 1]))
+            fprintf('      -> "%s" ikili (binary) bir kriter olarak işleniyor.\n', name);
+            if flag == 1 % Fayda (örn: MevcutYolKullanimi, 1=iyi)
+                suitability_maps(:, i) = col_data; % Değerler zaten 0 ve 1, doğrudan ata
+            else % Maliyet (eğer 1=kötü olsaydı)
+                suitability_maps(:, i) = 1 - col_data; % 1'leri 0, 0'ları 1 yap
+            end
+        
+        % Eğer Eğim, Mesafe gibi sürekli bir parametre ise:
+        else
+            fprintf('      -> "%s" sürekli (continuous) bir kriter olarak işleniyor.\n', name);
+            min_val = min(col_data);
+            max_val = max(col_data);
+            range = max_val - min_val;
+            
+            if abs(range) < eps
+                suitability_maps(:, i) = 0.5; % Tüm değerler aynı ise nötr
+                continue;
+            end
+            
+            if flag == 1 % Fayda (örn: YerlesimUzaklik_m, yüksek=iyi)
+                suitability_maps(:, i) = (col_data - min_val) / range;
+            else % Maliyet (örn: Egim_Percent, düşük=iyi)
+                suitability_maps(:, i) = (max_val - col_data) / range;
+            end
+        end
+    end
+    
+    % Olası sayısal hataları temizle
+    suitability_maps(suitability_maps < 0) = 0;
+    suitability_maps(suitability_maps > 1) = 1;
+
+    fprintf('   -> Tüm parametreler, [0, 1] arasında uygunluk skorlarına dönüştürüldü.\n');
+end
+
+%% --- Adım 7: Skorlama ve Yol Bulma Ana Fonksiyonu (NİHAİ VE DÜZELTİLMİŞ) ---
+function [data_table, all_paths, all_costs] = score_and_find_paths(active_methods, data_table, suitability_scores_01, suitability_scores_1_5, final_weights, coordinates, start_node, end_node, PARAMS)
+    
+    all_paths = struct();
+    all_costs = struct();
+    
+    for i = 1:length(active_methods)
+        method = active_methods{i};
+        fprintf('   - %s yöntemi uygulanıyor...\n', method);
+        scores_original = [];
+        gamma = 1; % Varsayılan gama değeri
+        
+        switch upper(method)
+            case 'AHP'
+                scores_original = sum(suitability_scores_01 .* final_weights', 2);
+                gamma = PARAMS.GAMMA_AHP;
+            case 'TOPSIS'
+                scores_original = calculate_topsis_scores(suitability_scores_01, final_weights);
+                gamma = PARAMS.GAMMA_TOPSIS;
+            case 'VIKOR'
+                vikor_q = calculate_vikor_scores_robust(suitability_scores_1_5, final_weights, 0.5);
+                scores_original = 1 - vikor_q; % 1-Q dönüşümü genellikle daha stabil sonuçlar verir.
+                gamma = PARAMS.GAMMA_VIKOR;
+                data_table.([method '_Q_Score']) = vikor_q;
+            case {'GNN', 'ISPA'}
+                initial_scores = sum(suitability_scores_01 .* final_weights', 2);
+                scores_original = calculate_simplified_gnn_scores(coordinates, initial_scores, PARAMS.GNN_ITERATIONS, PARAMS.NEIGHBORHOOD_SEARCH_DISTANCE);
+                gamma = PARAMS.GAMMA_GNN;
+        end
+        
+        % Orijinal (ham) skorları tabloya kaydet
+        data_table.([method '_Original_Score']) = scores_original;
+        
+        % --- KONTRAST ARTIRMA VE NİHAİ SKOR HESAPLAMA (DÜZELTİLDİ) ---
+        
+        % Adım 1: Orijinal skorları [0, 1] aralığına normalize et
+        min_s = min(scores_original);
+        max_s = max(scores_original);
+        if (max_s - min_s) < eps
+            scores_normalized = ones(size(scores_original)) * 0.5; % Hepsi aynı ise nötr skor
+        else
+            scores_normalized = (scores_original - min_s) / (max_s - min_s);
+        end
+        
+        % Adım 2: Gama düzeltmesini (kontrast artırmayı) uygula
+        final_scores_for_pathing = scores_normalized .^ gamma;
+        
+        fprintf('     -> Kontrast artırma uygulandı (Gamma = %.1f).\n', gamma);
+        
+        % Nihai, yol bulmada kullanılacak skorları tabloya kaydet
+        data_table.([method '_Score']) = final_scores_for_pathing;
+        
+        % DEBUG ÇIKTISI (Nihai skorlar için)
+        fprintf('     [DEBUG-%s] Nihai yol bulma skorları -> Min: %.3f, Max: %.3f, Ortalama: %.3f\n', ...
+                method, min(final_scores_for_pathing), max(final_scores_for_pathing), mean(final_scores_for_pathing));
+        
+        % Yol bulma algoritmasını çalıştır
+        [path, cost] = find_optimal_path_generic(coordinates, final_scores_for_pathing, start_node, end_node, PARAMS);
+        
+        all_paths.(method) = path;
+        all_costs.(method) = cost;
+        fprintf('     -> %s Yolu bulundu (Maliyet: %.2f).\n', method, cost);
+    end
+end
+
+
+%% 📌 5a. AHP için İkili Karşılaştırma Matrisini Kullanıcıdan Alma
+function comparison_matrix = get_ahp_pairwise_comparisons(param_names_ahp)
+    n_ahp = length(param_names_ahp);
+    if n_ahp < 2
+        warning('AHP için en az 2 parametre gereklidir. Tek parametre varsa ağırlığı 1 olacaktır.');
+        comparison_matrix = 1;
+        return;
+    end
+    comparison_matrix = eye(n_ahp); % Köşegenler 1
+
+    % Saaty Skalası açıklaması
+    fprintf('   Saaty Skalası (1-9):\n');
+    fprintf('     1: Eşit Önemde\n');
+    fprintf('     3: Biraz Daha Önemli\n');
+    fprintf('     5: Kuvvetli Derecede Önemli\n');
+    fprintf('     7: Çok Kuvvetli Derecede Önemli\n');
+    fprintf('     9: Aşırı Derecede Önemli\n');
+    fprintf('     (2, 4, 6, 8 ara değerlerdir)\n');
+    fprintf('     Ters ilişki için 1/x formatını kullanın (örn: 1/3, 1/5)\n\n');
+
+    for i = 1:n_ahp
+        for j = (i + 1):n_ahp
+            while true % Geçerli girdi alınana kadar sor
+                prompt = sprintf('   "%s" parametresi, "%s" parametresine göre ne kadar önemli? [1-9 veya 1/2-1/9]: ', param_names_ahp{i}, param_names_ahp{j});
+                val_str = input(prompt, 's');
+                
+                val_comp = NaN; % Başlangıçta geçersiz
+                % Kesir girdisini işle (örn. "1/5")
+                if contains(val_str, '/')
+                    parts = strsplit(val_str, '/');
+                    if length(parts) == 2
+                        num_val = str2double(parts{1});
+                        den_val = str2double(parts{2});
+                        if ~isnan(num_val) && ~isnan(den_val) && den_val ~= 0 && num_val == 1 && ismember(round(den_val), 1:9) % Payda 1-9 arası tamsayı olmalı
+                            val_comp = num_val / den_val;
+                        end
+                    end
+                else % Doğrudan sayı girdisi
+                     val_comp = str2double(val_str);
+                end
+
+                % Girdiyi doğrula (1-9 arası veya bunların tersi)
+                % 1/1 de geçerli olmalı (val_comp == 1)
+                is_direct_scale = (val_comp >= 1 && val_comp <= 9 && (val_comp == floor(val_comp) || ismember(val_comp, [1,2,3,4,5,6,7,8,9])));
+                is_inverse_scale = (val_comp > 0 && val_comp < 1 && (1/val_comp >=1 && 1/val_comp <=9) && ( (1/val_comp) == floor(1/val_comp) || ismember(round(10*val_comp)/10, round(10*(1./[1,2,3,4,5,6,7,8,9]))/10 ) ) );
+                % Küçük ondalık hatalarını tolere etmek için round kullanılabilir.
+                % Örneğin 1/3 = 0.333... bunu da kabul etmeli.
+                
+                if ~isnan(val_comp) && ( (val_comp >= 1 && val_comp <= 9) || (val_comp > 0 && val_comp < 1 && abs(1/val_comp - round(1/val_comp)) < 1e-6 && round(1/val_comp) >=1 && round(1/val_comp) <=9 ) )
+                    comparison_matrix(i, j) = val_comp;
+                    comparison_matrix(j, i) = 1/val_comp; % Tersi otomatik ayarla
+                    break; % Geçerli girdi, döngüden çık
+                else
+                    fprintf(2, '     Geçersiz giriş. Lütfen 1-9 arasında bir tamsayı veya 1/2, 1/3, ..., 1/9 formatında bir kesir girin.\n');
+                end
+            end
+        end
+    end
+end
+
+%% 📌 5b. AHP Ağırlıkları ve Tutarlılık Oranı Hesaplanması
+function [ahp_weights_calc, consistency_ratio_calc] = calculate_ahp_weights(comparison_matrix_ahp)
+    n_eig = size(comparison_matrix_ahp, 1);
+
+    if n_eig == 0
+        ahp_weights_calc = [];
+        consistency_ratio_calc = 0;
+        warning('AHP için hiç parametre yok, ağırlık hesaplanamıyor.');
+        return;
+    elseif n_eig == 1
+        ahp_weights_calc = 1;
+        consistency_ratio_calc = 0; % Tek kriter her zaman tutarlıdır
+        return;
+    end
+
+    % Özvektör yöntemi (Eigenvalue Method)
+    % Sütunları normalize etme ve satır ortalamalarını alma (Yaklaşık Yöntem)
+    % Bu yöntem, özellikle tam tutarlı olmayan matrisler için daha robust olabilir.
+    % Saaty'nin önerdiği ana yöntem özvektör yöntemidir.
+    
+    % 1. Yöntem: En Büyük Özdeğer ve Karşılık Gelen Özvektör (Saaty'nin Asıl Yöntemi)
+    [eigenvectors_mat, eigenvalues_diag_mat] = eig(comparison_matrix_ahp);
+    eigenvalues_vec = diag(eigenvalues_diag_mat);
+
+    % En büyük reel özdeğeri bul
+    [max_eigenvalue_val, idx_eig] = max(real(eigenvalues_vec));
+    principal_eigenvector_vec = real(eigenvectors_mat(:, idx_eig)); % Karşılık gelen özvektör
+
+    % Ağırlıkları normalize et (toplamları 1 olacak şekilde)
+    ahp_weights_calc = abs(principal_eigenvector_vec) / sum(abs(principal_eigenvector_vec)); % Negatif olasılığına karşı mutlak değer al
+
+    % Tutarlılık İndeksi (CI)
+    if n_eig <= 2 % n=1 veya n=2 için CI her zaman 0'dır.
+        consistency_index_val = 0;
+    else
+        consistency_index_val = (max_eigenvalue_val - n_eig) / (n_eig - 1);
+    end
+    
+
+    % Rastgele Tutarlılık İndeksi (RI) - Saaty'den alınan standart değerler
+    % n=11 için 1.51, n=12 için 1.48 (bazı kaynaklarda 1.54), n=13 için 1.56, n=14 için 1.57, n=15 için 1.59
+    RI_vals = [0 0 0.58 0.90 1.12 1.24 1.32 1.41 1.45 1.49 1.51 1.54 1.56 1.57 1.59]; % n=1'den n=15'e kadar
+    if n_eig <= length(RI_vals) && n_eig > 0
+        random_index_val = RI_vals(n_eig);
+    elseif n_eig > 15 % Daha büyük n için bir yaklaşım
+        random_index_val = 1.98 * (n_eig - 2) / n_eig; % Farklı yaklaşımlar mevcut
+        warning('Matris boyutu (%d) için standart RI değeri yok. Yaklaşık RI=%.2f kullanılıyor.', n_eig, random_index_val);
+    else % n_eig = 0 durumu (yukarıda ele alındı)
+        random_index_val = 1; % Hata olmaması için
+    end
+
+    % Tutarlılık Oranı (CR)
+    if n_eig <= 2 % n=1 veya n=2 için CR her zaman 0 (mükemmel tutarlı)
+        consistency_ratio_calc = 0;
+    elseif abs(random_index_val) < eps % RI sıfırsa (çok küçük n için, ama n>2 olmalı)
+        consistency_ratio_calc = Inf; % Tanımsız veya çok büyük
+        warning('RI değeri 0 veya çok küçük, CR hesaplanamıyor veya çok büyük.');
+    else
+        consistency_ratio_calc = consistency_index_val / random_index_val;
+    end
+
+    % Negatif ağırlık kontrolü (normalde olmamalı, olursa bir sorun var demektir)
+    if any(ahp_weights_calc < -eps) % Küçük toleransla kontrol
+        warning('AHP ağırlıklarında negatif değerler bulundu. Hesaplamayı kontrol edin. Mutlak değerler kullanılıyor.');
+        ahp_weights_calc = abs(ahp_weights_calc); % Negatifleri pozitife çevir
+        ahp_weights_calc = ahp_weights_calc / sum(ahp_weights_calc); % Tekrar normalize et
+    end
+end
+
+%% ------------- YENİ EKLENEN ALT FONKSİYON: ENTROPİ AĞIRLIKLARI -------------
+function entropy_weights = calculate_entropy_weights(parameters_raw)
+    % Bu fonksiyon, Entropi yöntemini kullanarak objektif ağırlıkları hesaplar.
+    % Girdi: parameters_raw -> NxM boyutunda ham parametre matrisi.
+    
+    if isempty(parameters_raw) || ~isnumeric(parameters_raw)
+        error('Entropy input data is empty or non-numeric.');
+    end
+
+    % Negatif değerler logaritma hesabını bozar. 
+    % Fiziksel parametreler (eğim, mesafe) negatif olamaz, 
+    % ancak bir önlem olarak, veriyi sıfırdan başlayacak şekilde kaydıralım.
+    min_vals = min(parameters_raw, [], 1);
+    data_positive = parameters_raw - min_vals;
+    
+    [m, n] = size(data_positive);
+
+    % Adım 1: Karar matrisini normalize et (p_ij)
+    sum_of_cols = sum(data_positive, 1);
+    zero_sum_cols = sum_of_cols < 1e-9;
+    if any(zero_sum_cols)
+        sum_of_cols(zero_sum_cols) = 1;
+    end
+    P_ij = data_positive ./ sum_of_cols;
+
+    % Adım 2: Entropi değerini hesapla (E_j)
+    k = 1 / log(m);
+    
+    % log(0) hatasını önlemek için çok küçük bir değer ekle
+    P_ij(P_ij == 0) = 1e-9; 
+    
+    entropy_values = -k * sum(P_ij .* log(P_ij), 1);
+
+    % Adım 3: Sapma derecesini (d_j) ve ağırlıkları (w_j) hesapla
+    divergence_degree = 1 - entropy_values;
+
+    sum_of_divergence = sum(divergence_degree);
+    if abs(sum_of_divergence) < 1e-9
+        entropy_weights_row = ones(1, n) / n;
+    else
+        entropy_weights_row = divergence_degree / sum_of_divergence;
+    end
+    
+    % Çıktının her zaman bir SÜTUN VEKTÖRÜ olmasını garanti et.
+    entropy_weights = entropy_weights_row';
+end
+
+
+%% 📌 4. TOPSIS Skorları (AHP ağırlıkları ile)
+function topsis_scores = calculate_topsis_scores(normalized_benefit_params, ahp_weights_col_vec)
+    % normalized_benefit_params: NxM matrisi. Tüm parametreler 0-1 arasında ve 1 "en iyi".
+    % ahp_weights_col_vec: Mx1 AHP'den gelen kriter ağırlıkları (sütun vektörü).
+
+    if isempty(normalized_benefit_params) || isempty(ahp_weights_col_vec)
+        topsis_scores = [];
+        warning('TOPSIS: Normalleştirilmiş parametreler veya AHP ağırlıkları boş.');
+        return;
+    end
+
+    if size(normalized_benefit_params,2) ~= length(ahp_weights_col_vec)
+        error('TOPSIS: Parametre sayısı (%d) ile AHP ağırlık sayısı (%d) uyuşmuyor.', size(normalized_benefit_params,2), length(ahp_weights_col_vec));
+    end
+    
+    % Ağırlıkları satır vektörüne çevir (çarpım için)
+    ahp_weights_row_vec = ahp_weights_col_vec';
+
+    % Adım 1: Ağırlıklandırılmış normalize karar matrisi
+    weighted_normalized = normalized_benefit_params .* ahp_weights_row_vec; % Eleman bazında çarpım
+
+    % Adım 2: İdeal En İyi (PIS) ve İdeal En Kötü (NIS) Çözümler
+    % Normalizasyon zaten fayda yönlü (1 en iyi, 0 en kötü) olduğu için:
+    % PIS: Her kriter için ağırlığın kendisi (çünkü en iyi normalize değer 1, 1*ağırlık = ağırlık)
+    % NIS: Her kriter için 0 (çünkü en kötü normalize değer 0, 0*ağırlık = 0)
+    ideal_best = 1.0 * ahp_weights_row_vec;  % PIS (Pozitif İdeal Çözüm)
+    ideal_worst = 0.0 * ahp_weights_row_vec; % NIS (Negatif İdeal Çözüm)
+
+    % Eğer bazı ağırlıklar sıfırsa, o kriterler PIS/NIS'te de sıfır olur, bu sorun değil.
+
+    % Adım 3: PIS ve NIS'e olan Öklid uzaklıkları
+    % Her satır (alternatif) için hesapla
+    dist_to_best = sqrt(sum((weighted_normalized - ideal_best).^2, 2));
+    dist_to_worst = sqrt(sum((weighted_normalized - ideal_worst).^2, 2));
+
+    % Adım 4: Göreli yakınlık (TOPSIS Skoru)
+    % Sıfıra bölme olasılığına karşı küçük bir epsilon ekle
+    topsis_scores = dist_to_worst ./ (dist_to_best + dist_to_worst + eps);
+
+    % Olası NaN'ları temizle (örneğin, dist_to_best ve dist_to_worst ikisi de 0 ise)
+    % Bu durumda alternatif hem PIS hem NIS olabilir, skor belirsizdir (0.5 atanabilir veya 0)
+    nan_indices = isnan(topsis_scores);
+    if any(nan_indices)
+        % Eğer hem PIS'e hem NIS'e uzaklık sıfırsa, bu alternatif hem PIS hem NIS'tir.
+        % Bu durumda skor genellikle 0.5 olarak kabul edilir (kararsız).
+        % Veya en kötü durum 0 olarak atanabilir.
+        problematic_alternatives = find(nan_indices);
+        for k_nan = 1:length(problematic_alternatives)
+            idx = problematic_alternatives(k_nan);
+            if abs(dist_to_best(idx)) < eps && abs(dist_to_worst(idx)) < eps
+                topsis_scores(idx) = 0.5; % Hem PIS hem NIS ise
+                 fprintf('      TOPSIS Uyarı: %d. alternatif hem PIS hem NIS''e çok yakın. Skor 0.5 olarak ayarlandı.\n',idx);
+            else
+                topsis_scores(idx) = 0; % Diğer NaN durumları için 0
+                 fprintf('      TOPSIS Uyarı: %d. alternatif için NaN skor oluştu. 0 olarak ayarlandı.\n',idx);
+            end
+        end
+    end
+    topsis_scores(topsis_scores < 0) = 0; % Negatif olmamalı
+    topsis_scores(topsis_scores > 1) = 1; % 1'i geçmemeli
+end
+
+%% 📌 6. VIKOR Skor Hesaplanması
+function q_scores = calculate_vikor_scores(normalized_benefit_params, ahp_weights_col_vec, cost_benefit_flags_after_norm_unused, v_strategy)
+    % normalized_benefit_params: NxM. Tüm parametreler 0-1 arasında ve 1 "en iyi".
+    % ahp_weights_col_vec: Mx1 AHP'den gelen kriter ağırlıkları (sütun vektörü).
+    % cost_benefit_flags_after_norm_unused: Bu artık kullanılmıyor çünkü normalizasyon yönü halletti.
+    %                                       Ancak fonksiyon imzası uyumluluk için korunabilir.
+    % v_strategy: Q hesaplamasındaki 'v' katsayısı (genellikle 0.5)
+
+    if isempty(normalized_benefit_params) || isempty(ahp_weights_col_vec)
+        q_scores = [];
+        warning('VIKOR: Normalleştirilmiş parametreler veya AHP ağırlıkları boş.');
+        return;
+    end
+
+    [num_alternatives, num_criteria] = size(normalized_benefit_params);
+    if num_criteria ~= length(ahp_weights_col_vec)
+        error('VIKOR: Parametre sayısı (%d) ile AHP ağırlık sayısı (%d) uyuşmuyor.', num_criteria, length(ahp_weights_col_vec));
+    end
+    
+    ahp_weights_row_vec = ahp_weights_col_vec'; % Çarpımlar için satır vektörü
+
+    % Adım 1: Her kriter için en iyi (f_star) ve en kötü (f_minus) değerleri belirle
+    % normalized_benefit_params zaten 1'in en iyi, 0'ın en kötü olduğu şekilde geldiği için:
+    f_star = ones(1, num_criteria);  % En iyi değerler (her kriter için 1)
+    f_minus = zeros(1, num_criteria); % En kötü değerler (her kriter için 0)
+
+    % Adım 2: S_i (ortalama grup faydası/uzaklığı) ve R_i (maksimum bireysel pişmanlık/uzaklığı) hesapla
+    S = zeros(num_alternatives, 1);
+    R = zeros(num_alternatives, 1);
+    
+    weighted_terms_matrix = zeros(num_alternatives, num_criteria);
+
+    for j_crit = 1:num_criteria % Her kriter için
+        denominator = f_star(j_crit) - f_minus(j_crit);
+        if abs(denominator) < eps % Payda sıfırsa (kriter sabitse, f_star=1, f_minus=0 olmalıydı)
+                                  % Bu durum, normalize_params'ta o sütunun sabit (örn. hep 0.5) olmasından kaynaklanabilir.
+                                  % Bu durumda f_star=0.5, f_minus=0.5 olur, payda=0. Terim 0 olmalı.
+            weighted_terms_matrix(:, j_crit) = 0;
+            if ~(f_star(j_crit)==1 && f_minus(j_crit)==0) && abs(f_star(j_crit)-f_minus(j_crit)) < eps
+                 fprintf('      VIKOR Uyarı: %d. kriter için f_star ve f_minus çok yakın (sabit değer?). Terim 0 kabul edildi.\n',j_crit);
+            end
+        else
+            % (f_star - f_ij) / (f_star - f_minus)  (fayda kriteri için)
+            % normalized_benefit_params zaten f_ij gibi davranıyor ve f_star=1, f_minus=0
+            % (1 - normalized_val) / (1 - 0) = 1 - normalized_val
+            % Bu, "en iyiye olan normalize uzaklık" gibi düşünülebilir.
+            distance_from_ideal_normalized = (f_star(j_crit) - normalized_benefit_params(:, j_crit)) / denominator;
+            weighted_terms_matrix(:, j_crit) = ahp_weights_row_vec(j_crit) * distance_from_ideal_normalized;
+        end
+    end
+    
+    S = sum(weighted_terms_matrix, 2);
+    R = max(weighted_terms_matrix, [], 2);
+
+    % Adım 3: Q_i değerlerini hesapla
+    S_star = min(S);
+    S_minus = max(S); % Eğer tüm S değerleri aynıysa S_minus = S_star olur.
+    R_star = min(R);
+    R_minus = max(R); % Eğer tüm R değerleri aynıysa R_minus = R_star olur.
+
+    q_scores = zeros(num_alternatives, 1);
+    
+    term1_denominator = S_minus - S_star;
+    term2_denominator = R_minus - R_star;
+
+    for i_alt = 1:num_alternatives
+        term1 = 0;
+        if abs(term1_denominator) > eps % Payda sıfırdan büyükse
+            term1 = v_strategy * (S(i_alt) - S_star) / term1_denominator;
+        elseif abs(S(i_alt) - S_star) < eps % Payda sıfır VE S(i) S_star'a eşitse, terim 0
+            term1 = 0;
+        else % Payda sıfır ama S(i) S_star'a eşit değilse, tüm alternatifler aynı S değerine sahip, terim 0 olur.
+            term1 = 0; % Veya bu durum bir uyarı gerektirebilir
+            % fprintf('      VIKOR Q Uyarı: Tüm S değerleri aynı (%f), S terimi 0.\n',S_star);
+        end
+        
+        term2 = 0;
+        if abs(term2_denominator) > eps % Payda sıfırdan büyükse
+            term2 = (1 - v_strategy) * (R(i_alt) - R_star) / term2_denominator;
+        elseif abs(R(i_alt) - R_star) < eps % Payda sıfır VE R(i) R_star'a eşitse, terim 0
+            term2 = 0;
+        else
+            term2 = 0;
+            % fprintf('      VIKOR Q Uyarı: Tüm R değerleri aynı (%f), R terimi 0.\n',R_star);
+        end
+        q_scores(i_alt) = term1 + term2;
+    end
+    
+    % Q skorları 0 ile 1 arasında olmalıdır.
+    q_scores(isnan(q_scores)) = 1; % Olası NaN'ları en kötü değerle (1) doldur
+    q_scores(q_scores < 0) = 0;
+    q_scores(q_scores > 1) = 1;
+end
+
+
+%% --- GNN/ISPA YARDIMCI FONKSİYONU (DEBUG VERSİYONU) ---
+
+function gnn_scores = calculate_simplified_gnn_scores(coordinates, initial_node_scores, iterations, max_distance_threshold)
+    % Bu fonksiyon, GNN'den esinlenen bir iteratif skor yayılımı uygular.
+
+    fprintf('      [DEBUG-GNN] GNN fonksiyonu başlatıldı.\n');
+    
+    num_nodes = size(coordinates, 1);
+    current_scores = initial_node_scores;
+
+    fprintf('      [DEBUG-GNN] Beklenen satır sayısı (num_nodes): %d\n', num_nodes);
+    fprintf('      [DEBUG-GNN] Girdi `initial_node_scores` boyutu: %d x %d\n', size(current_scores,1), size(current_scores,2));
+    
+    if length(current_scores) ~= num_nodes
+        error('GNN: Başlangıç skorlarının sayısı, düğüm sayısıyla eşleşmiyor.');
+    end
+    
+    % Komşuluk listesini önceden hesapla
+    adj = cell(num_nodes, 1);
+    for i = 1:num_nodes
+        distances = sqrt(sum((coordinates(:,1:2) - coordinates(i, 1:2)).^2, 2));
+        neighbors = find(distances > eps & distances < max_distance_threshold);
+        adj{i} = neighbors;
+    end
+
+    % İteratif Skor Yayılımı
+    for iter = 1:iterations
+        fprintf('      [DEBUG-GNN] İterasyon %d başlıyor. Önceki `current_scores` boyutu: %d x %d\n', iter, size(current_scores,1), size(current_scores,2));
+        
+        new_scores = zeros(num_nodes, 1);
+        for i = 1:num_nodes
+            neighbor_indices = adj{i};
+            
+            if isempty(neighbor_indices)
+                aggregated_message = current_scores(i);
+            else
+                neighbor_scores = current_scores(neighbor_indices);
+                aggregated_message = mean(neighbor_scores, 'omitnan');
+            end
+            
+            if isnan(aggregated_message)
+                aggregated_message = current_scores(i);
+            end
+            
+            new_scores(i) = (current_scores(i) + aggregated_message) / 2;
+        end
+        current_scores = new_scores;
+        
+        fprintf('      [DEBUG-GNN] İterasyon %d bitti. Yeni `current_scores` boyutu: %d x %d\n', iter, size(current_scores,1), size(current_scores,2));
+    end
+
+    gnn_scores = current_scores;
+    fprintf('      [DEBUG-GNN] İterasyonlar tamamlandı. `gnn_scores` boyutu: %d x %d\n', size(gnn_scores,1), size(gnn_scores,2));
+    
+    % Nihai Normalizasyon
+    gnn_scores(~isfinite(gnn_scores)) = 0;
+
+    min_s = min(gnn_scores);
+    max_s = max(gnn_scores);
+    range_s = max_s - min_s;
+    
+    if range_s > 1e-9
+        gnn_scores = (gnn_scores - min_s) / range_s;
+    else 
+        gnn_scores = ones(num_nodes, 1) * 0.5;
+    end
+    
+    fprintf('      [DEBUG-GNN] Normalizasyon sonrası nihai `gnn_scores` boyutu: %d x %d\n', size(gnn_scores,1), size(gnn_scores,2));
+    
+    % Son boyut kontrolü
+    if length(gnn_scores) ~= num_nodes
+        error('GNN skor hesaplaması sonrası boyut uyuşmazlığı! Beklenen: %d, Gelen: %d', num_nodes, length(gnn_scores));
+    end
+    
+    fprintf('      [DEBUG-GNN] GNN fonksiyonu başarıyla tamamlandı, değerler döndürülüyor.\n');
+end
+
+
+%% 📌 6. VIKOR Skor Hesaplanması (SAĞLAM VERSİYON)
+function q_scores = calculate_vikor_scores_robust(scores_matrix, weights_col_vec, v_strategy)
+    % Bu sağlam VIKOR fonksiyonu, herhangi bir aralıktaki uygunluk skor matrisini
+    % alır (YÜKSEK SKOR = İYİ) ve f*/f- değerlerini kendi belirler.
+    
+    if isempty(scores_matrix) || isempty(weights_col_vec)
+        q_scores = [];
+        return;
+    end
+    
+    [num_alternatives, num_criteria] = size(scores_matrix);
+    
+    % --- Adım 1: f* (en iyi) ve f- (en kötü) değerlerini VERİDEN belirle ---
+    % Bizim sistemimizde tüm skorlar "uygunluk" olduğu için yüksek değer her zaman iyidir.
+    f_star = max(scores_matrix, [], 1); % Her sütunun maksimumu
+    f_minus = min(scores_matrix, [], 1);% Her sütunun minimumu
+
+    % Adım 2: S ve R değerlerini hesapla
+    S = zeros(num_alternatives, 1);
+    R = zeros(num_alternatives, 1);
+    
+    weights_row_vec = weights_col_vec';
+    
+    % Her bir alternatif (düğüm) için S ve R'yi hesapla
+    for i = 1:num_alternatives
+        % O anki alternatifin skor satırı
+        current_scores = scores_matrix(i,:);
+        
+        % Pişmanlık terimlerini hesapla: w * (f* - f_i) / (f* - f-)
+        % paydanın sıfır olmasını engellemek için eps ekle
+        regret_terms = weights_row_vec .* (f_star - current_scores) ./ (f_star - f_minus + eps);
+        
+        S(i) = sum(regret_terms);
+        R(i) = max(regret_terms);
+    end
+
+    % Adım 3: Q değerini hesapla
+    S_star = min(S);
+    S_minus = max(S);
+    R_star = min(R);
+    R_minus = max(R);
+
+    q_scores = zeros(num_alternatives, 1);
+    
+    % Paydanın sıfır olma durumunu kontrol et
+    term1_denominator = S_minus - S_star;
+    if abs(term1_denominator) < eps, term1_denominator = 1; end
+    
+    term2_denominator = R_minus - R_star;
+    if abs(term2_denominator) < eps, term2_denominator = 1; end
+    
+    % Vektörel hesaplama daha hızlıdır
+    term1 = v_strategy * (S - S_star) / term1_denominator;
+    term2 = (1 - v_strategy) * (R - R_star) / term2_denominator;
+    
+    q_scores = term1 + term2;
+    
+    % Olası NaN'ları ve limit dışı değerleri temizle
+    q_scores(isnan(q_scores)) = 1; % NaN ise en kötü pişmanlık
+    q_scores(q_scores < 0) = 0;
+    q_scores(q_scores > 1) = 1;
+end
+
+%% 📌 7. En Uygun Yolun Bulunması (Genel Fonksiyon)
+%function [shortest_path_res, path_cost_res] = find_optimal_path_generic(coordinates_path, node_scores_path, start_node_path, end_node_path, max_distance_threshold_path)
+    
+%function [shortest_path_res, path_cost_res] = find_optimal_path_generic(coordinates_path, node_scores_path, start_node_path, end_node_path, max_distance_threshold, COST_PENALTY_LAMBDA)
+ 
+function [shortest_path_res, path_cost_res] = find_optimal_path_generic(coordinates_path, node_scores_path, start_node_path, end_node_path, PARAMS)
+    
+    num_nodes_path = size(coordinates_path, 1);
+    node_scores_path = max(node_scores_path, 1e-9);
+    
+    source_nodes_g = [];
+    target_nodes_g = [];
+    edge_weights_g = [];
+    
+    for i = 1:num_nodes_path
+        distances_vector = sqrt(sum((coordinates_path(:,1:2) - coordinates_path(i, 1:2)).^2, 2));
+        neighbors_indices = find(distances_vector > eps & distances_vector < PARAMS.NEIGHBORHOOD_SEARCH_DISTANCE);
+
+        if ~isempty(neighbors_indices)
+            % Komşulara ait bilgileri al
+            current_coord = coordinates_path(i, :);
+            neighbor_coords = coordinates_path(neighbors_indices, :);
+            
+            % --- YENİ: EĞİM HESAPLAMA VE KISIT KONTROLÜ ---
+            
+            % 1. Fiziksel mesafe ve yükseklik farkını hesapla
+            actual_distances = distances_vector(neighbors_indices);
+            delta_z = neighbor_coords(:,3) - current_coord(3); % Yönlü yükseklik farkı (iniş/çıkış)
+            
+            % 2. Anlık yüzde eğimi hesapla
+            % Not: Sıfıra bölmeyi engellemek için küçük bir değer ekleniyor
+            instant_slopes = (abs(delta_z) ./ (actual_distances + eps)) * 100;
+            
+            % 3. Maksimum Eğim Kısıtını Uygula
+            % Eğim, izin verilen maksimum değeri aşan komşuları ele
+            passable_neighbors_mask = instant_slopes <= PARAMS.MAX_ALLOWED_SLOPE;
+            
+            % Eğer geçilebilir en az bir komşu kaldıysa devam et
+            if ~any(passable_neighbors_mask)
+                continue; % Bu düğümün tüm komşuları çok dik, sonraki düğüme geç
+            end
+            
+            % Sadece geçilebilir komşularla çalış
+            valid_neighbors_indices = neighbors_indices(passable_neighbors_mask);
+            valid_actual_distances = actual_distances(passable_neighbors_mask);
+            valid_delta_z = delta_z(passable_neighbors_mask);
+            num_valid_neighbors = length(valid_neighbors_indices);
+
+            % Grafiği oluştur
+            source_nodes_g = [source_nodes_g; repmat(i, num_valid_neighbors, 1)];
+            target_nodes_g = [target_nodes_g; valid_neighbors_indices];
+
+            % --- GÜNCELLENMİŞ MALİYET HESABI (YENİ KISITLARLA) ---
+            
+            % a. Skor bazlı ceza
+            avg_scores_on_edge = (node_scores_path(i) + node_scores_path(valid_neighbors_indices)) / 2;
+            score_penalty = (1 - avg_scores_on_edge);
+            
+            % b. YENİ: Tırmanış/İniş Cezası
+            % delta_z > 0 ise tırmanıştır.
+            is_uphill = valid_delta_z > 0;
+            uphill_penalty = double(is_uphill) * PARAMS.UPHILL_PENALTY_FACTOR; % Tırmanış ise ceza ekle, değilse 0
+            
+            % c. Nihai maliyet
+            % Maliyet = Mesafe * (1 + SkorCezası*Lambda + TırmanışCezası)
+            costs_for_edges = valid_actual_distances .* (1 + score_penalty * PARAMS.COST_PENALTY_LAMBDA + uphill_penalty);
+
+            edge_weights_g = [edge_weights_g; costs_for_edges];
+        end
+    end
+
+    if isempty(source_nodes_g)
+        error('find_optimal_path: Grafikte hiç GEÇİLEBİLİR kenar oluşturulamadı. Ya NEIGHBORHOOD_SEARCH_DISTANCE çok düşük ya da MAX_ALLOWED_SLOPE çok kısıtlayıcı.');
+    end
+
+
+    % Grafik nesnesini oluştur
+    % MATLAB'ın graph nesnesi, aynı düğüm çifti arasında birden fazla kenar varsa
+    % (multigraph değilse) sonuncuyu veya bir stratejiye göre birini tutar.
+    % Bizim oluşturma şeklimizle bu sorun olmamalı (i'den j'ye tek kenar).
+    try
+        graph_obj_path = graph(source_nodes_g, target_nodes_g, edge_weights_g, num_nodes_path);
+    catch ME_graph
+        error('find_optimal_path: Grafik oluşturulamadı. Hata: %s. Düğüm indisleri veya ağırlıklarla ilgili sorun olabilir.', ME_graph.message);
+    end
+
+
+    % Dijkstra algoritması ile en kısa yolu bul
+    if isempty(start_node_path) || isempty(end_node_path) || ...
+       ~isnumeric(start_node_path) || ~isnumeric(end_node_path) || ...
+       start_node_path < 1 || end_node_path < 1 || ...
+       start_node_path > num_nodes_path || end_node_path > num_nodes_path
+        error('find_optimal_path: Başlangıç veya bitiş düğümü geçersiz. Aralık dışında veya sayısal değil.');
+    end
+
+    if start_node_path == end_node_path
+        warning('find_optimal_path: Başlangıç ve bitiş düğümleri aynı. Yol [başlangıç_düğümü], maliyet 0.');
+        shortest_path_res = start_node_path;
+        path_cost_res = 0;
+        return;
+    end
+
+    try
+        [shortest_path_res, path_cost_res] = shortestpath(graph_obj_path, start_node_path, end_node_path);
+    catch ME_shortestpath
+        warning('find_optimal_path: shortestpath algoritması hata verdi: %s. Başlangıç/bitiş düğümleri grafikte olmayabilir veya graf bağlantısız olabilir.', ME_shortestpath.message);
+        shortest_path_res = []; path_cost_res = Inf;
+        return;
+    end
+
+
+    if isempty(shortest_path_res)
+        % Eğer yol bulunamadıysa, grafiğin bağlantılı olup olmadığını kontrol et
+        bins = conncomp(graph_obj_path);
+        if bins(start_node_path) ~= bins(end_node_path)
+            warning('find_optimal_path: Başlangıç (%d) ve bitiş (%d) düğümleri farklı bağlantılı bileşenlerde. Aralarında yol yok.', start_node_path, end_node_path);
+        else
+            warning('find_optimal_path: Başlangıç (%d) ve bitiş (%d) arasında yol bulunamadı. Eşik değeri düşük veya başka bir sorun olabilir (aynı bileşendeler).', start_node_path, end_node_path);
+        end
+        path_cost_res = Inf; % Yol yoksa maliyet sonsuz
+    elseif path_cost_res == Inf
+         warning('find_optimal_path: Başlangıç (%d) ve bitiş (%d) arasında yol bulundu ama maliyeti sonsuz. Kenar ağırlıklarını kontrol edin.', start_node_path, end_node_path);
+    end
+end
+
+
+%% --- Adım 9 için Yardımcı Fonksiyon: Sonuçları Excel Dosyasına Kaydetme ---
+
+function save_results_to_excel_dynamic(excel_file_path, data_table_excel, param_names_excel, final_weights_excel, consistency_ratio_excel, ...
+                                     all_paths_excel, all_costs_excel, active_methods_excel, weighting_method_excel, analysis_table)
+    
+    % Bu fonksiyon, analizin tüm sayısal çıktılarını düzenli bir şekilde
+    % çok sayfalı bir Excel raporuna yazar.
+
+    % Excel dosyası varsa, içeriğini temizlemek için ilk sayfayı 'overwrite' modunda yaz.
+    % Bu, eski çalışmalardan kalan artık sayfaları engeller.
+    if exist(excel_file_path, 'file')
+        delete(excel_file_path);
+    end
+
+    % --- Sayfa 1: Düğüm Verileri ve Tüm Skorlar ---
+    try
+        fprintf('   Sayfa 1: Düğüm Verileri ve Skorlar yazılıyor...\n');
+        % NodeID sütunu yoksa, ekleyelim.
+        if ~ismember('NodeID', data_table_excel.Properties.VariableNames)
+            data_table_excel = addvars(data_table_excel, (1:height(data_table_excel))', 'Before', 1, 'NewVariableNames', 'NodeID');
+        end
+        writetable(data_table_excel, excel_file_path, 'Sheet', 'Dugum_Skorlari', 'WriteMode', 'overwritesheet');
+    catch ME
+        warning('Excel''e "Dugum_Skorlari" sayfası yazılırken hata oluştu: %s', ME.message);
+    end
+
+    % --- Sayfa 2: Ağırlıklandırma Sonuçları ---
+    try
+        fprintf('   Sayfa 2: Ağırlıklandırma Sonuçları (%s) yazılıyor...\n', weighting_method_excel);
+        
+        % Kullanılan yöntem bilgisini yaz
+        method_info_T = table({weighting_method_excel}, 'VariableNames', {'Kullanilan_Agirliklandirma_Yontemi'});
+        writetable(method_info_T, excel_file_path, 'Sheet', 'Agirlik_Sonuclari', 'Range', 'A1');
+        
+        % Parametreler ve ağırlıklarını içeren tabloyu yaz
+        weights_summary_T = table(param_names_excel(:), final_weights_excel(:), 'VariableNames', {'Parametre', 'Agirlik'});
+        writetable(weights_summary_T, excel_file_path, 'Sheet', 'Agirlik_Sonuclari', 'Range', 'A3');
+
+        % Eğer AHP kullanıldıysa ve CR geçerliyse, tutarlılık oranını ekle
+        if strcmpi(weighting_method_excel, 'AHP') && ~isnan(consistency_ratio_excel)
+            cr_T = table(consistency_ratio_excel, 'VariableNames', {'Tutarlilik_Orani_CR'});
+            writetable(cr_T, excel_file_path, 'Sheet', 'Agirlik_Sonuclari', 'Range', 'D3');
+        end
+    catch ME
+        warning('Excel''e "Agirlik_Sonuclari" sayfası yazılırken hata oluştu: %s', ME.message);
+    end
+
+    % --- Sayfa 3: Bulunan Yolların Detayları ---
+    try
+        fprintf('   Sayfa 3: Bulunan Yolların Detayları yazılıyor...\n');
+        
+        path_output_table = table(); % Boş tablo başlat
+        
+        for i = 1:length(active_methods_excel)
+            method_name = active_methods_excel{i};
+            
+            % İlgili yönteme ait yol ve maliyet verisi var mı diye kontrol et
+            if isfield(all_paths_excel, method_name) && isfield(all_costs_excel, method_name)
+                current_path_nodes = all_paths_excel.(method_name);
+                
+                % Yol bulunamadıysa (boş ise), bunu belirt
+                if isempty(current_path_nodes)
+                    current_path_str = 'Yol Bulunamadı';
+                    current_path_nodes_for_table = {''}; % Boş hücre
+                else
+                    current_path_str = strjoin(string(current_path_nodes), ' -> ');
+                    current_path_nodes_for_table = {current_path_nodes'}; % Dikey bir vektör olarak hücreye koy
+                end
+                
+                current_cost = all_costs_excel.(method_name);
+                
+                % Geçici bir satır tablosu oluştur ve ana tabloya ekle
+                temp_table = table({method_name}, current_path_nodes_for_table, {current_path_str}, current_cost, ...
+                    'VariableNames', {'Yontem', 'Yol_Dugum_Indisleri', 'Yol_Metin', 'Algoritmik_Maliyet'});
+                path_output_table = [path_output_table; temp_table];
+            end
+        end
+        
+        if ~isempty(path_output_table)
+            writetable(path_output_table, excel_file_path, 'Sheet', 'Bulunan_Yollar');
+        else
+            fprintf('   -> Aktif yöntemler için yazılacak yol bulunamadı.\-n');
+        end
+    catch ME
+        warning('Excel''e "Bulunan_Yollar" sayfası yazılırken hata oluştu: %s.', ME.message);
+    end
+
+    % --- Sayfa 4: Güzergahların Karşılaştırmalı Analizi ---
+    try
+        fprintf('   Sayfa 4: Güzergahların Karşılaştırmalı Analizi yazılıyor...\n');
+        if ~isempty(analysis_table)
+             writetable(analysis_table, excel_file_path, 'Sheet', 'Karsilastirmali_Analiz');
+        else
+            fprintf('   -> Yazılacak analiz tablosu verisi bulunamadı.\n');
+        end
+    catch ME
+        warning('Excel''e "Karsilastirmali_Analiz" sayfası yazılırken hata oluştu: %s', ME.message);
+    end
+    
+    fprintf('   Excel dosyası "%s" başarıyla oluşturuldu/güncellendi.\n', excel_file_path);
+end
+
+
+
+%% --- Adım 10: Güzergahları Analiz ve Raporlama Fonksiyonu ---
+
+function results_table = analyze_and_report_routes(all_paths, all_costs, coordinates, data_table)
+    % Bulunan güzergahları çeşitli nicel metriklerle analiz eder ve
+    % karşılaştırmalı bir sonuç tablosu oluşturur.
+    
+    fprintf('\n10. Güzergahlar Nicel Olarak Analiz Ediliyor...\n');
+    
+    method_names = fieldnames(all_paths);
+    num_methods = length(method_names);
+    
+    % Sonuçları saklamak için hücre dizisi başlat
+    results_data = cell(num_methods, 7);
+    
+    % --- DÜZELTME: Doğru skor sütunlarını bul ---
+    % Adı "_Score" ile biten ama "_Q_Score" olmayan tüm sütunları al. 
+    % Bu sütunlar artık [0, 1] aralığında ve kontrast artırılmış.
+    score_col_names = data_table.Properties.VariableNames(endsWith(data_table.Properties.VariableNames, '_Score') & ~contains(data_table.Properties.VariableNames, {'_Q_'}));
+    all_scores_matrix = data_table{:, score_col_names};
+    
+    % "Kötü Bölge" eşiğini bu normalize skorların ortalaması olarak belirle
+    score_threshold = mean(all_scores_matrix(:), 'omitnan');
+    fprintf('   -> "Kötü Bölge" skor eşiği: %.3f (normalize edilmiş skorların ortalaması)\n', score_threshold);
+
+    for i = 1:num_methods
+        method = method_names{i};
+        path_idx = all_paths.(method);
+        
+        results_data{i, 1} = method; % Yöntem Adı
+        
+        if isempty(path_idx)
+            % Eğer yol bulunamadıysa, tüm metrikleri NaN olarak ata
+            [results_data{i, 2:7}] = deal(NaN);
+            continue;
+        end
+        
+        path_coords = coordinates(path_idx, :);
+        
+        % Metrik 1: Toplam Algoritmik Maliyet
+        results_data{i, 2} = all_costs.(method);
+        
+        % Metrik 2: Toplam 3D Güzergah Uzunluğu
+        dx = diff(path_coords(:,1));
+        dy = diff(path_coords(:,2));
+        dz = diff(path_coords(:,3));
+        segment_lengths_3d = sqrt(dx.^2 + dy.^2 + dz.^2);
+        total_length_3d = sum(segment_lengths_3d);
+        results_data{i, 3} = total_length_3d;
+        
+        % Metrik 3 & 4: Ortalama ve Maksimum Eğim
+        segment_lengths_2d = sqrt(dx.^2 + dy.^2);
+        segment_slopes = abs(dz) ./ (segment_lengths_2d + eps) * 100;
+        mean_slope = mean(segment_slopes);
+        max_slope = max(segment_slopes);
+        results_data{i, 4} = mean_slope;
+        results_data{i, 5} = max_slope;
+        
+        % Metrik 5: Toplam Tırmanış
+        total_uphill = sum(dz(dz > 0));
+        results_data{i, 6} = total_uphill;
+        
+        % Metrik 6: "Kötü" Bölgelerde Kat Edilen Mesafe
+        
+        % --- DÜZELTME: Doğru sütun adını kullan ---
+        % Analiz için yol bulmada kullanılan son (normalize edilmiş ve gerdirilmiş) skorları kullan
+        score_column_name = [method '_Score']; 
+        
+        % Güzergah üzerindeki her segmentin başlangıç noktasının skorunu al
+        path_scores = data_table.(score_column_name)(path_idx(1:end-1));
+        
+        is_bad_segment = path_scores < score_threshold;
+        % 'diff' fonksiyonu nedeniyle segment_lengths_3d bir eleman eksik, bu yüzden sorun yok
+        distance_in_bad_zones = sum(segment_lengths_3d(is_bad_segment));
+        results_data{i, 7} = distance_in_bad_zones;
+    end
+    
+    % Hücre dizisini bir tabloya dönüştür
+    col_names = {'Yontem', 'Algoritmik_Maliyet', 'Toplam_Uzunluk_3D_m', 'Ortalama_Egim_Yuzde', 'Maksimum_Egim_Yuzde', 'Toplam_Tirmanis_m', 'Kotu_Bolgedeki_Mesafe_m'};
+    results_table = cell2table(results_data, 'VariableNames', col_names);
+    
+    % Sonuçları Komut Penceresi'nde göster
+    disp(results_table);
+end
+
+
+
+%% ==================== YENİ: SKOR HARİTASI GÖRSELLEŞTİRME FONKSİYONU ====================
+
+function plot_score_maps(data_table, coordinates, active_methods, results_dir)
+    % This function orchestrates the generation of publication-quality 
+    % 2D and 3D suitability score maps as separate figures.
+    
+    fprintf('   -> Generating publication-quality suitability score maps...\n');
+
+    % Generate and save the 2D score maps figure
+    plot_2d_score_maps(data_table, coordinates, active_methods, results_dir);
+
+    % Generate and save the 3D score maps figure
+    plot_3d_score_maps(data_table, coordinates, active_methods, results_dir);
+end
+
+function plot_2d_score_maps(data_table, coordinates, active_methods, results_dir)
+    % Creates a 2x2 tiled figure for 2D suitability score maps.
+    
+    % --- FIGURE SETUP (14cm x 7cm) ---
+    figureWidth_cm = 14;
+    figureHeight_cm = 7;
+    
+    fig = figure('Name', '2D Suitability Score Maps', ...
+                 'Units', 'centimeters', ...
+                 'Position', [5, 5, figureWidth_cm, figureHeight_cm], ...
+                 'Color', 'w');
+    
+    % 2x2 düzeni oluştur, kutular arasında az boşluk bırak
+    t = tiledlayout(2, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
+
+    % --- Ortak Ayarlar ---
+    cmap = parula(256);
+    c_limits = [0, 1];
+    
+    for i = 1:length(active_methods)
+        method = active_methods{i};
+        score_col_name = [method '_Score'];
+        if ~ismember(score_col_name, data_table.Properties.VariableNames), continue; end
+        scores = data_table.(score_col_name);
+        
+        ax = nexttile(t);
+        axes_handles(i) = ax; % Bu eksenin handle'ını sakla
+        scatter(ax, coordinates(:,1), coordinates(:,2), 10, scores, 'filled', 'Marker', 's');
+        
+        colormap(ax, cmap);
+        caxis(ax, c_limits);
+        axis(ax, 'equal', 'tight');
+        title(ax, method, 'FontSize', 9, 'FontWeight', 'bold');
+        set(ax, 'FontSize', 7);
+
+        
+        % Sadece kenarlardaki etiketleri göster
+        if mod(i,2) ~= 1 % Sağdaki grafikler (2, 4)
+            set(ax, 'YTickLabel', []);
+        else
+            ylabel(ax, 'Northing (m)', 'FontSize', 8);
+        end
+        if i <= 2 % Üstteki grafikler (1, 2)
+            set(ax, 'XTickLabel', []);
+        else
+            xlabel(ax, 'Easting (m)', 'FontSize', 8);
+        end
+    end
+    
+    % Ortak bir colorbar ekle
+    if ~isempty(axes_handles)
+        % Son eksene bir colorbar ekle ve konumunu ayarla
+        cb = colorbar(axes_handles(end)); % Son (veya herhangi bir) ekseni referans al
+        cb.Layout.Tile = 'east'; % Onu tüm layout'un sağına taşı
+        ylabel(cb, 'Suitability Score', 'FontSize', 9, 'FontWeight', 'bold');
+    end
+    title(t, 'Comparative 2D Suitability Surfaces by Methods', 'FontSize', 11, 'FontWeight', 'bold');
+    %title(t, 'Comparative Suitability Surfaces Generated by Each Method', 'FontSize', 12, 'FontWeight', 'bold');
+    % Figürü kaydet    
+    output_filename = fullfile(results_dir, 'Figure_Score_Maps_2D.png');
+    print(fig, output_filename, '-dpng', '-r600');
+    fprintf('      -> 2D Score Map figure saved to "%s"\n', output_filename);
+end
+
+
+function plot_3d_score_maps(data_table, coordinates, active_methods, results_dir)
+    % Creates a 2x2 tiled figure for 3D suitability score maps.
+
+    figureWidth_cm = 14;
+    figureHeight_cm = 7;
+    fig = figure('Name', '3D Suitability Score Maps', ...
+                 'Units', 'centimeters', 'Position', [10, 10, figureWidth_cm, figureHeight_cm], 'Color', 'w');
+
+    t = tiledlayout(2, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
+    axes_handles_3d = gobjects(length(active_methods), 1);
+
+    cmap = parula(256);
+    c_limits = [0, 1];
+
+    for i = 1:length(active_methods)
+        method = active_methods{i};
+        score_col_name = [method '_Score'];
+        if ~ismember(score_col_name, data_table.Properties.VariableNames), continue; end
+        scores = data_table.(score_col_name);
+        
+        ax = nexttile(t);
+        axes_handles_3d(i) = ax;
+        scatter3(ax, coordinates(:,1), coordinates(:,2), coordinates(:,3), 10, scores, 'filled');
+        
+        colormap(ax, cmap);
+        caxis(ax, c_limits);
+        axis(ax, 'equal', 'tight');
+        grid(ax, 'on');
+        set(ax, 'GridLineStyle', ':', 'GridColor', [0.3 0.3 0.3], 'GridAlpha', 0.5);
+        title(ax, method, 'FontSize', 9, 'FontWeight', 'bold');
+        set(ax, 'FontSize', 7);
+        view(ax, -40, 25);
+    end
+
+
+    if ~isempty(axes_handles_3d)
+        cb = colorbar(axes_handles_3d(end));
+        cb.Layout.Tile = 'east';
+        ylabel(cb, 'Suitability Score', 'FontSize', 9, 'FontWeight', 'bold');
+    end
+
+    % --- DÜZELTME SONU ---
+    title(t, '3D Visualization of Suitability Scores on Terrain', 'FontSize', 11, 'FontWeight', 'bold');
+    %title(t, 'Comparative Suitability Surfaces Generated by Each Method', 'FontSize', 12, 'FontWeight', 'bold');
+
+    output_filename = fullfile(results_dir, 'Figure_Score_Maps_3D.png');
+    print(fig, output_filename, '-dpng', '-r600');
+    fprintf('      -> 3D Score Map figure saved to "%s"\n', output_filename);
+
+end
+
+
+
+%%
+
+function visualize_results(coordinates, all_paths, active_methods, results_dir)
+    % Orchestrates the generation of publication-quality 2D and 3D route comparison maps.
+    
+    [X_grid, Y_grid, Z_grid] = create_dem_grid(coordinates);
+    
+    % Generate and save the 2D route map
+    plot_2d_visualization(X_grid, Y_grid, Z_grid, coordinates, all_paths, active_methods, fullfile(results_dir, 'Figure_Route_Comparison_2D.png'));
+    
+    % Generate and save the 3D route model
+    plot_3d_visualization(X_grid, Y_grid, Z_grid, coordinates, all_paths, active_methods, fullfile(results_dir, 'Figure_Route_Comparison_3D.png'));
+end
+
+function plot_2d_visualization(X_grid, Y_grid, Z_grid, coordinates, all_paths, active_methods, save_path)
+    % Creates a publication-quality 2D map comparing the optimal routes.
+    
+    fig2d = figure('Name', '2D Route Comparison', 'Position', [100, 100, 900, 700], 'Color', 'w');
+    ax2d = axes(fig2d);
+    hold(ax2d, 'on');
+    
+    % Background: Shaded relief map for better terrain perception
+    if ~all(isnan(Z_grid(:)))
+        imagesc(ax2d, X_grid(1,:), Y_grid(:,1), Z_grid);
+        colormap(ax2d, bone); % A grayscale colormap that works well as a base
+        set(ax2d, 'YDir', 'normal');
+        
+        % Overlay contour lines for elevation reference
+        contour(ax2d, X_grid, Y_grid, Z_grid, 15, 'LineWidth', 0.7, 'LineColor', [0.4 0.4 0.4], 'HandleVisibility', 'off');
+    end
+
+    % Define styles and colors for the routes
+    styles = {'-', '-', '-', '-', '--', '--'};
+    colors = {[1 0.1 0.1], [0.1 0.8 0.1], [0.2 0.7 1], [0.9 0.2 0.9], [0.1 0.9 0.9], [1 0.6 0]};
+    legend_handles = [];
+    
+    for i = 1:length(active_methods)
+        method = active_methods{i};
+        
+        if isfield(all_paths, method) && ~isempty(all_paths.(method))
+            path_idx = all_paths.(method);
+            path_coords = coordinates(path_idx, :);
+            style_idx = mod(i-1, length(styles)) + 1;
+            color_idx = mod(i-1, length(colors)) + 1;
+            h = plot(ax2d, path_coords(:,1), path_coords(:,2), ...
+                     'LineStyle', styles{style_idx}, 'Color', colors{color_idx}, ...
+                     'LineWidth', 2.5, 'DisplayName', method);
+            legend_handles(end+1) = h;
+        end
+    end
+    
+    % Plot Start/End Nodes only if at least one route was found and plotted
+    if ~isempty(legend_handles)
+        
+        % Safely determine the first valid path to define start/end points
+        first_path_idx = [];
+        for i = 1:length(active_methods)
+            method = active_methods{i};
+            if isfield(all_paths, method) && ~isempty(all_paths.(method))
+                 first_path_idx = all_paths.(method);
+                 break; % İlk geçerli yolu bulduk, döngüden çık.
+            end
+        end
+        
+        if ~isempty(first_path_idx)
+            start_pt = coordinates(first_path_idx(1),:);
+            end_pt = coordinates(first_path_idx(end),:);
+            
+            h_start = plot(ax2d, start_pt(1), start_pt(2), 'p', 'MarkerSize', 18, 'MarkerFaceColor', 'yellow', 'MarkerEdgeColor', 'k', 'DisplayName', 'Start');
+            h_end = plot(ax2d, end_pt(1), end_pt(2), 's', 'MarkerSize', 16, 'MarkerFaceColor', 'cyan', 'MarkerEdgeColor', 'k', 'DisplayName', 'End');
+            
+            % Lejantı, tüm toplanan handle'lar ile GÜVENLİ bir şekilde oluştur
+            final_legend_handles = [legend_handles, h_start, h_end];
+            legend(ax2d, final_legend_handles, 'Location', 'best', 'FontSize', 11, 'EdgeColor', [0.5 0.5 0.5]);
+        end
+    end
+
+    % Finalize plot aesthetics
+    title('Comparative Analysis of Optimal Route Alternatives', 'FontSize', 16, 'FontWeight', 'bold');
+    xlabel('Easting (m)', 'FontSize', 12); 
+    ylabel('Northing (m)', 'FontSize', 12);
+    axis(ax2d, 'equal', 'tight');
+    grid(ax2d, 'on'); 
+    set(ax2d, 'GridColor', [0.1 0.1 0.1], 'GridAlpha', 0.25, 'GridLineStyle', ':');
+    box(ax2d, 'on');
+    hold(ax2d, 'off');
+    
+    % Save the figure with high resolution
+    print(fig2d, save_path, '-dpng', '-r600');
+    fprintf('   -> 2D Route Comparison map saved to "%s"\n', save_path);
+end
+
+function plot_3d_visualization(X_grid, Y_grid, Z_grid, coordinates, all_paths, active_methods, save_path)
+    % Creates a publication-quality 3D model comparing the optimal routes.
+    
+    fig3d = figure('Name', '3D Route Comparison', 'WindowState', 'maximized', 'Color', [0.1 0.1 0.15]);
+    ax3d = axes(fig3d, 'Color', 'none', 'XColor', 'w', 'YColor', 'w', 'ZColor', 'w', 'GridColor', [0.7 0.7 0.7], 'GridAlpha', 0.3);
+    hold(ax3d, 'on');
+
+    % Terrain Surface
+    if ~all(isnan(Z_grid(:)))
+        surf(ax3d, X_grid, Y_grid, Z_grid, 'EdgeColor', 'none', 'FaceAlpha', 0.8, 'HandleVisibility', 'off');
+        colormap(ax3d, 'jet');
+        camlight(ax3d, 'headlight');
+        lighting(ax3d, 'gouraud');
+        material(ax3d, 'dull');
+    end
+
+    % Define styles and colors for the routes
+    styles = {'-', '-', '-', '-', '--', '--'};
+    colors = {[1 0.2 0.2], [0.2 1 0.2], [0.3 0.8 1], [1 0.3 1], [0.2 1 1], [1 0.7 0.2]}; % Vivid colors for dark background
+    legend_handles_3d = [];
+
+    for i = 1:length(active_methods)
+        method = active_methods{i};
+        if isfield(all_paths, method) && ~isempty(all_paths.(method))
+            path_idx = all_paths.(method);
+            path_coords = coordinates(path_idx, :);
+            style_idx = mod(i-1, length(styles)) + 1;
+            color_idx = mod(i-1, length(colors)) + 1;
+            
+            % Plot the route slightly above the surface
+            h = plot3(ax3d, path_coords(:,1), path_coords(:,2), path_coords(:,3) + 10, ...
+                      'LineStyle', styles{style_idx}, 'Color', colors{color_idx}, ...
+                      'LineWidth', 3, 'DisplayName', method);
+            legend_handles_3d(end+1) = h;
+            
+            % Plot a subtle shadow on the base plane for better depth perception
+            plot3(ax3d, path_coords(:,1), path_coords(:,2), ones(size(path_coords,1),1) * (min(Z_grid(:))-5), ...
+                  'Color', [0 0 0 0.4], 'LineWidth', 1.5, 'HandleVisibility', 'off');
+        end
+    end
+    
+    % Plot Start/End Nodes only if at least one route was found
+    if ~isempty(legend_handles_3d)
+    
+        % Safely determine the first valid path to define start/end points
+        first_path_idx_3d = [];
+        for i = 1:length(active_methods)
+            method = active_methods{i};
+            if isfield(all_paths, method) && ~isempty(all_paths.(method))
+                 first_path_idx_3d = all_paths.(method);
+                 break; % İlk geçerli yolu bulduk, döngüden çık.
+            end
+        end
+        
+        if ~isempty(first_path_idx_3d)
+            start_pt = coordinates(first_path_idx_3d(1),:);
+            end_pt = coordinates(first_path_idx_3d(end),:);
+            
+            h_start = plot3(ax3d, start_pt(1), start_pt(2), start_pt(3) + 15, 'p', 'MarkerSize', 20, 'MarkerFaceColor', 'yellow', 'MarkerEdgeColor', 'k', 'DisplayName', 'Start');
+            h_end = plot3(ax3d, end_pt(1), end_pt(2), end_pt(3) + 15, 's', 'MarkerSize', 18, 'MarkerFaceColor', 'cyan', 'MarkerEdgeColor', 'k', 'DisplayName', 'End');
+            
+            % Create the legend with all collected valid handles
+            final_legend_handles_3d = [legend_handles_3d, h_start, h_end];
+            lgd = legend(ax3d, final_legend_handles_3d, 'Location', 'northeastoutside', 'TextColor', 'w', 'Color', [0.2 0.2 0.2 0.7], 'FontSize', 12);
+        end
+    end
+
+    % Finalize plot aesthetics
+    title('3D Terrain Model with Route Alternatives', 'Color', 'w', 'FontSize', 18, 'FontWeight', 'bold');
+    xlabel('Easting (m)', 'FontSize', 14); 
+    ylabel('Northing (m)', 'FontSize', 14); 
+    zlabel('Elevation (m)', 'FontSize', 14);
+    axis(ax3d, 'equal', 'tight');
+    grid(ax3d, 'on'); box(ax3d, 'on');
+    set(ax3d, 'GridColor', [0.7 0.7 0.7], 'GridAlpha', 0.3, 'GridLineStyle', ':'); % Sürüm uyumlu grid
+    view(ax3d, -45, 30);
+    camva(ax3d, 8);
+    rotate3d(ax3d, 'on');
+    hold(ax3d, 'off');
+    
+    % Save the figure with high resolution
+    print(fig3d, save_path, '-dpng', '-r600');
+    fprintf('   -> 3D Route Comparison model saved to "%s"\n', save_path);
+end
+
+
+
+
+%% ==================== YENİ: GÜZERGAH PROFİLİ GÖRSELLEŞTİRME FONKSİYONU ====================
+
+function plot_route_profiles(all_paths, coordinates, active_methods, results_dir)
+    % Bulunan tüm güzergahların boykesitlerini (profil grafiklerini)
+    % karşılaştırmalı olarak tek bir grafikte çizer.
+    
+    fprintf('   -> Güzergah profilleri (boykesitler) oluşturuluyor...\n');
+    
+    fig = figure('Name', 'Route Profile Comparison', 'WindowState', 'maximized');
+    ax = axes(fig);
+    hold(ax, 'on');
+    
+    % Renk ve stil tanımları (diğer grafiklerle tutarlı)
+    styles = {'-', '-', '-', '-', '--', '--', '--'};
+    colors = {[1 0.1 0.1], [0.1 1 0.1], [0.2 0.8 1], [1 0.2 1], [0.1 1 1], [1 0.6 0]};
+    
+    legend_handles = [];
+    
+    for i = 1:length(active_methods)
+        method = active_methods{i};
+        path_idx = all_paths.(method);
+        
+        if isempty(path_idx) || length(path_idx) < 2
+            continue; % Çizilecek bir profil yoksa atla
+        end
+        
+        path_coords = coordinates(path_idx, :);
+        
+        % Kümülatif 2D mesafeyi hesapla (yatay eksen için)
+        dx = diff(path_coords(:,1));
+        dy = diff(path_coords(:,2));
+        segment_lengths_2d = sqrt(dx.^2 + dy.^2);
+        cumulative_distance = [0; cumsum(segment_lengths_2d)];
+        
+        % Yükseklik verisini al (dikey eksen için)
+        elevations = path_coords(:,3);
+        
+        % Çizimi yap
+        style_idx = mod(i-1, length(styles)) + 1;
+        color_idx = mod(i-1, length(colors)) + 1;
+        
+        h = plot(ax, cumulative_distance, elevations, ...
+                 'LineStyle', styles{style_idx}, 'Color', colors{color_idx}, ...
+                 'LineWidth', 2.5, 'DisplayName', method);
+        legend_handles(end+1) = h;
+    end
+    
+    % Grafik Ayarları
+    title('Comparison of Route Elevation Profiles', 'FontSize', 16, 'FontWeight', 'bold');
+    xlabel('Distance Along Route (m)', 'FontSize', 12);
+    ylabel('Elevation (m)', 'FontSize', 12);
+    grid(ax, 'on');
+    box(ax, 'on');
+    
+    % Eksenleri veriye sığdır
+    axis(ax, 'tight');
+    % Y ekseninin en alttan başlaması için küçük bir tampon ekle
+    y_limits = get(ax, 'YLim');
+    set(ax, 'YLim', [y_limits(1) - 10, y_limits(2) + 10]);
+    
+    if ~isempty(legend_handles)
+        legend(ax, legend_handles, 'Location', 'best', 'FontSize', 11);
+    end
+    
+    hold(ax, 'off');
+    
+    % Kaydetme
+    try
+        save_path = fullfile(results_dir, 'Guzergah_Profilleri.png');
+        saveas(fig, save_path);
+        fprintf('      -> Güzergah profilleri grafiği "%s" olarak kaydedildi.\n', save_path);
+    catch ME
+        warning('Güzergah profilleri grafiği kaydedilemedi: %s', ME.message);
+    end
+end
+
+
+function plot_suitability_on_parameters(data_table, coordinates, active_methods, results_dir)
+    % This function creates a series of overlay maps. Each map shows a raw
+    % parameter layer as a basemap, with the suitability scores from all
+    % analytical methods overlaid as distinct markers.
+    
+    fprintf('   -> Generating Parameter-Suitability Overlay Maps...\n');
+
+    % --- CONFIGURATION ---
+    % Parametreler, başlıklar ve altlık harita renkleri
+    param_info.names = data_table.Properties.VariableNames(...
+        contains(data_table.Properties.VariableNames, {'Slope', 'Road', 'Settlement', 'Sensitive'}) & ...
+        ~contains(data_table.Properties.VariableNames, '_Score'));
+    
+    param_info.titles = cellfun(@(x) strrep(x, '_', ' '), param_info.names, 'UniformOutput', false);
+    
+    param_info.colormaps = {gray, gray, parula, parula}; % Eğim, Yol, Yerleşim, Hassas Alan için
+
+    % Yöntemler için işaretçi stilleri
+    method_markers = {'o', 's', '^', 'd', 'p', '*'}; % Circle, Square, Triangle, Diamond...
+    method_colors = {[1 0 0], [0 0.7 0], [0 0.5 1], [0.8 0 0.8]}; % Red, Green, Blue, Magenta
+    
+    for p = 1:length(param_info.names)
+        param_name = param_info.names{p};
+        param_title = param_info.titles{p};
+        
+        fig = figure('Name', sprintf('Overlay Analysis for: %s', param_title), 'WindowState', 'maximized', 'Color', 'w');
+        ax = axes(fig);
+        hold(ax, 'on');
+        
+        % 1. Adım: Altlık olarak ham parametre haritasını çiz
+        param_data = data_table.(param_name);
+        scatter(ax, coordinates(:,1), coordinates(:,2), 50, param_data, 'filled', 's', 'MarkerFaceAlpha', 0.2);
+        colormap(ax, param_info.colormaps{p});
+        cb = colorbar(ax);
+        cb.Label.String = sprintf('Raw Parameter Value: %s', param_title);
+        cb.FontSize = 8;
+        
+        legend_handles = [];
+        legend_texts = {};
+        
+        % 2. Adım: Her bir yöntemin skorunu, farklı bir işaretçi ile üzerine bindir
+        for i = 1:length(active_methods)
+            method = active_methods{i};
+            score_col_name = [method '_Score'];
+            if ~ismember(score_col_name, data_table.Properties.VariableNames), continue; end
+            
+            scores = data_table.(score_col_name);
+            
+            % Yüksek skorlu (uygun) noktaları daha belirgin hale getir
+            % Sadece skoru 0.75'ten büyük olanları çizelim
+            highlight_idx = scores > 0.00;
+            
+            marker_shape = method_markers{mod(i-1, length(method_markers)) + 1};
+            marker_color = method_colors{mod(i-1, length(method_colors)) + 1};
+
+            if any(highlight_idx)
+                h = plot(ax, coordinates(highlight_idx, 1), coordinates(highlight_idx, 2), ...
+                         marker_shape, ...
+                         'MarkerSize', 0.4, ...
+                         'MarkerEdgeColor', 'k', ...
+                         'MarkerFaceColor', marker_color, ...
+                         'DisplayName', method);
+                legend_handles(end+1) = h;
+                legend_texts{end+1} = method;
+            end
+        end
+        
+        % 3. Adım: Ayarlar ve Lejant
+        title(ax, sprintf('Overlay of High-Suitability Nodes on "%s" Basemap', param_title), 'FontSize', 16);
+        xlabel(ax, 'Easting (m)');
+        ylabel(ax, 'Northing (m)');
+        axis(ax, 'equal', 'tight');
+        grid(ax, 'on');
+        set(ax, 'GridColor', [0.1 0.1 0.1], 'GridAlpha', 0.2, 'GridLineStyle', ':');
+        box(ax, 'on');
+        
+        if ~isempty(legend_handles)
+            lgd = legend(ax, legend_handles, legend_texts, 'Location', 'best');
+            lgd.Title.String = 'High-Suitability Nodes by Method';
+            lgd.Title.FontSize = 10;
+            lgd.Title.FontWeight = 'bold';
+        end
+        
+        hold(ax, 'off');
+        
+        try
+            save_path = fullfile(results_dir, sprintf('Figure_Overlay_Analysis_%s.png', strrep(param_name, '_', '')));
+            print(fig, save_path, '-dpng', '-r600');
+            fprintf('      -> Overlay Analysis map for "%s" saved to "%s"\n', param_title, save_path);
+        catch ME
+            warning('Could not save the overlay map for "%s": %s', param_title, ME.message);
+        end
+    end
+end
+
+
+%% --- KRİTER STANDARDİZASYONU (NİHAİ, TAM VE DOĞRULANMIŞ VERSİYON) ---
+function [suitability_scores_01, suitability_scores_1_to_N] = standardize_parameters_to_classes(parameters, parameter_names, cost_benefit_flags)
+    
+    % Sınıf sayısını merkezi bir yerden kontrol et. Bu, analizin hassasiyetini belirler.
+    NUM_CLASSES = 10; 
+    
+    fprintf('   -> Parametreler, %d standart uygunluk sınıfına dönüştürülüyor (Reclassification)...\n', NUM_CLASSES);
+    
+    [num_nodes, num_criteria] = size(parameters);
+    suitability_scores_1_to_N = zeros(size(parameters));
+
+    for i = 1:num_criteria
+        col_data = parameters(:, i);
+        flag = cost_benefit_flags(i);
+        name = parameter_names{i};
+        
+        % Eğer bir sütundaki tüm değerler aynıysa, nötr bir sınıf ata ve devam et
+        if (max(col_data) - min(col_data)) < 1e-9
+            suitability_scores_1_to_N(:, i) = ceil(NUM_CLASSES / 2);
+            continue;
+        end
+        
+        % Adım 1: Verinin türünü belirle
+        unique_vals = unique(col_data);
+        % MevcutYolKullanimi gibi 0/1 verilerini tespit et
+        is_binary_01 = length(unique_vals) <= 2 && all(ismember(unique_vals, [0, 1]));
+        
+        final_scores = zeros(num_nodes, 1);
+        
+        % Adım 2a: Eğer veri İKİLİ (0/1) ise, basit atama yap
+        if is_binary_01
+            fprintf('      -> "%s" ikili (binary) bir kriter olarak işleniyor.\n', name);
+            
+            worst_class = 1;
+            best_class = NUM_CLASSES;
+            
+            % Bu parametrenin doğal yönü FAYDA'dır (1 = iyi, 0 = kötü).
+            % Kullanıcının F/M seçimi, bu doğal yönü onaylıyor mu yoksa tersine mi çeviriyor?
+            
+            if flag == 1 % Kullanıcı "FAYDA" dedi (Doğal yön ile aynı).
+                % 1 olanlara en iyi sınıfı, 0 olanlara en kötü sınıfı ver.
+                final_scores(col_data == 0) = worst_class;
+                final_scores(col_data == 1) = best_class;
+            else % Kullanıcı "MALİYET" dedi (Doğal yönün tersi).
+                % 1 olanlara en kötü sınıfı, 0 olanlara en iyi sınıfı ver.
+                final_scores(col_data == 0) = best_class;
+                final_scores(col_data == 1) = worst_class;
+            end
+            
+        % Adım 2b: Eğer veri SÜREKLİ ise (Eğim, Mesafe vb.), persentil tabanlı sınıflandırma yap
+        else
+            fprintf('      -> "%s" sürekli (continuous) bir kriter olarak işleniyor.\n', name);
+            
+            % Veriyi, yüzdelik dilimlerine göre N adet sınıfa ayır.
+            % 'discretize' fonksiyonu, küçük değerlere küçük sınıf numarası atar.
+            raw_classes = discretize(col_data, prctile(col_data, linspace(0, 100, NUM_CLASSES + 1)));
+            raw_classes(isnan(raw_classes)) = 1; % Olası NaN'ları en kötü sınıfa ata
+
+            % Şimdi, kullanıcının F/M seçimine göre bu ham sınıfları nihai uygunluk skorlarına çevir.
+            if flag == -1 % Kullanıcı MALİYET dedi (Düşük ham değer = İYİ).
+                % Düşük ham sınıflar (1, 2, ...), yüksek uygunluk sınıfına (10, 9, ...) dönüşmeli.
+                final_scores = (NUM_CLASSES + 1) - raw_classes;
+            else % Kullanıcı FAYDA dedi (Yüksek ham değer = İYİ).
+                % Yüksek ham sınıflar (..., 9, 10), zaten yüksek uygunluk sınıfı demektir.
+                final_scores = raw_classes;
+            end
+        end
+        
+        suitability_scores_1_to_N(:, i) = final_scores;
+    end
+    
+    % Çıktı 1: VIKOR gibi yöntemler için 1-N arası tamsayı skorlar
+    % (İsim değişikliği, artık 1-5 değil)
+    suitability_scores_1_to_N = suitability_scores_1_to_N; 
+    
+    % Çıktı 2: Diğer yöntemler için [0, 1] aralığına normalize edilmiş skorlar
+    suitability_scores_01 = (suitability_scores_1_to_N - 1) / (NUM_CLASSES - 1);
+    
+    fprintf('   -> Tüm parametreler, [0, 1] arasında standartlaştırılmış uygunluk skorlarına dönüştürüldü.\n');
+end
+
