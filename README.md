@@ -1,10 +1,10 @@
-# Route-Optimization-MCDM-GNN
-Route-Optimization-MCDM-GNN
+# Route-Optimization-ISPA
+Route-Optimization-ISPA
 # Multi-Criteria Route Optimization using GIS and MCDM Methods
 
 ## Overview
 
-This repository contains the complete MATLAB codebase for the research paper titled: **"[Article Title Placeholder]"**, published in/submitted to **"[Journal Name Placeholder]"**. The project presents an integrated methodological framework for optimal route selection by synergizing Geographic Information Systems (GIS) with a portfolio of Multi-Criteria Decision Making (MCDM) techniques.
+This repository contains the complete MATLAB codebase for the research paper titled: **"[Article Title Placeholder]"**, published in/submitted to **"[Iterative Score Propagation Algorithm (ISPA): A GNN-Inspired Framework for Multi-Criteria Route Design with Engineering Applications]"**. The project presents an integrated methodological framework for optimal route selection by synergizing Geographic Information Systems (GIS) with a portfolio of Multi-Criteria Decision Making (MCDM) techniques.
 
 The primary contribution of this work is a comparative analysis of four distinct suitability scoring methods:
 1.  **AHP** (Analytic Hierarchy Process) as a Weighted Linear Combination
@@ -20,10 +20,10 @@ This codebase is provided to ensure the **transparency**, **reproducibility**, a
 
 ```
 .
-├── generate_realistic_parameters.m  # Module 1: Generates criteria parameters from base data
-├── road_project_final_version.m     # Module 2: Performs the MCDM analysis and route optimization
+├── generate_spatial_parameters.m  # Module 1: Generates criteria parameters from base data
+├── road_project_main.m     # Module 2: Performs the MCDM analysis and route optimization
 ├── input_data/
-│   └── sample_nodes.xlsx            # Sample input file with node coordinates (Easting, Northing, Elevation)
+│   └── sample_nodes.xlsx            # Sample input file (INPUT04_20.xlsx) with node coordinates (Easting, Northing, Elevation)
 └── README.md                        # This file
 ```
 
@@ -39,7 +39,7 @@ This project requires **MATLAB R2022a** or newer, with the following toolboxes i
 
 This step creates a realistic decision environment from a simple list of node coordinates.
 
-1.  **Prepare Your Data:** Create an Excel file (`.xlsx`) containing your node points. It must include columns for Easting, Northing, and Elevation. A sample file is provided in the `input_data` folder. Place this file in your MATLAB working directory.
+1.  **Prepare Your Data:** Create an Excel file (`INPUT04_20.xlsx`) containing your node points. It must include columns for Easting, Northing, and Elevation. A sample file is provided in the `input_data` folder. Place this file in your MATLAB working directory.
 
 2.  **Run the Script:** Open MATLAB and run the `generate_realistic_parameters.m` script.
     ```matlab
@@ -58,9 +58,9 @@ This step creates a realistic decision environment from a simple list of node co
 
 This is the main module that performs the multi-method analysis and generates the final results.
 
-1.  **Run the Script:** In MATLAB, run the `road_project_final_version.m` script.
+1.  **Run the Script:** In MATLAB, run the `road_project_main.m` script.
     ```matlab
-    >> road_project_final_version
+    >> road_project_main
     ```
 
 2.  **Interactive Selections:** The script will present a series of dialog boxes for you to configure the analysis:
