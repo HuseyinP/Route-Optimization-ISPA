@@ -1,0 +1,388 @@
+function generate_spatial_parameters()
+%==========================================================================
+% GENERATE SPATIAL PARAMETERS for Route Optimization
+%
+% Author: [Hüseyin Pehlivan/Gebze Technical University]
+% Date: [June 2025]
+% Version: v1.0 (Final Robust Version)
+%
+% Description:
+% This script serves as a data preparation tool for a multi-criteria
+% route optimization analysis. It loads a set of potential route nodes
+% (X, Y, Z coordinates) and generates four key parameter layers based on
+% user-defined geographical features:
+%   1. Slope (%): A terrain-derived engineering constraint.
+%   2. Proximity to Roads (m): An economic/accessibility factor.
+%   3. Proximity to Settlements (m): A social impact factor.
+%   4. Proximity to Sensitive Areas (m): An environmental impact factor.
+%
+% The script offers a flexible user interface, allowing geographical
+% features to be defined either by loading data from external files (.xlsx,
+% .csv) or by drawing them interactively on a map.
+%
+% The final output is a single Excel file containing the original node
+% data augmented with these four raw parameter columns, ready to be used
+% as input for the main route optimization algorithm. It also generates
+% professional-quality 2D and 3D maps of the input layers and the final
+% parameter layers for validation and inclusion in scientific publications.
+%
+%==========================================================================
+
+    clearvars; close all; clc;
+    
+    fprintf('SCRIPT: Generate Spatial Parameters for Route Optimization (v7.0)\n');
+    fprintf('====================================================================\n');
+    
+    % --- Step 1: LOAD INPUT NODE DATA ---
+    fprintf('\nStep 1: Loading Node Data...\n');
+    [file, path] = uigetfile({'*.xlsx';'*.csv'}, 'Select the Excel/CSV file containing node coordinates (X, Y, Z)');
+    if isequal(file, 0), disp('Operation cancelled by user.'); return; end
+    inputFile = fullfile(path, file);
+    
+    [~, name, ~] = fileparts(file);
+    outputFile = fullfile(path, ['parameters_' name '.xlsx']);
+
+    try
+        nodeData = readtable(inputFile, 'VariableNamingRule', 'preserve', 'TextType', 'string');
+        [x_col, y_col, z_col] = find_coord_columns(nodeData.Properties.VariableNames);
+        coordinates = nodeData{:, {x_col, y_col, z_col}};
+        if ~isnumeric(coordinates), coordinates = str2double(coordinates); end
+        num_nodes = size(coordinates, 1);
+        fprintf('   -> Successfully loaded %d nodes from "%s".\n', num_nodes, file);
+    catch ME
+        error('Failed to read the input node file. Please check format.\nMATLAB Error: %s', ME.message);
+    end
+
+    resultTable = nodeData;
+    
+    % --- Step 2: CALCULATE SLOPE PARAMETER (AUTOMATIC) ---
+    fprintf('\nStep 2: Calculating Slope Parameter...\n');
+    resultTable.Slope_Percent = calculate_slopes(coordinates);
+    fprintf('   -> Slope values calculated for all nodes.\n');
+
+    % --- Step 3: DEFINE SPATIAL CONSTRAINT LAYERS (INTERACTIVE) ---
+    fprintf('\nStep 3: Defining Spatial Constraint Layers...\n');
+    fig = figure('Name', 'Interactive Parameter Definition', 'WindowState', 'maximized');
+    ax = axes(fig);
+    scatter(ax, coordinates(:,1), coordinates(:,2), 15, 'k', '.');
+    axis equal; grid on; hold on;
+    title(ax, 'Define Spatial Constraint Layers (Follow Dialog Boxes)', 'FontSize', 14);
+    xlabel(ax, 'Easting (m)'); ylabel(ax, 'Northing (m)');
+    
+    fprintf('\n--- Defining Existing Road Network ---\n');
+    road_segments = get_features_from_user(ax, 'Road Network', 'polyline');
+    resultTable.RoadProximity_m = calculate_min_dist_to_features(coordinates, road_segments, 'polyline');
+    fprintf('   -> Proximity to road network calculated.\n');
+
+    fprintf('\n--- Defining Settlement Areas ---\n');
+    settlement_centers = get_features_from_user(ax, 'Settlement Areas', 'point');
+    resultTable.SettlementProximity_m = calculate_min_dist_to_features(coordinates, settlement_centers, 'point');
+    fprintf('   -> Proximity to settlement areas calculated.\n');
+    
+    fprintf('\n--- Defining Sensitive Areas ---\n');
+    sensitive_polygons = get_features_from_user(ax, 'Sensitive Areas', 'polygon');
+    resultTable.SensitiveAreaProximity_m = calculate_min_dist_to_features(coordinates, sensitive_polygons, 'polygon');
+    fprintf('   -> Proximity to sensitive areas calculated.\n');
+    
+    if isvalid(fig), close(fig); end
+
+    % --- Step 4: VISUALIZE INPUT LAYERS FOR VALIDATION ---
+    fprintf('\nStep 4: Visualizing Input Data Layers for Validation...\n');
+    output_path_base_inputs = fullfile(fileparts(outputFile), ['InputLayers_' name]);
+    plot_input_layers_2d(coordinates, road_segments, settlement_centers, sensitive_polygons, [output_path_base_inputs '_2D.png']);
+    plot_input_layers_3d(coordinates, road_segments, settlement_centers, sensitive_polygons, [output_path_base_inputs '_3D.png']);
+    
+    % --- Step 5: SAVE FINAL PARAMETER FILE ---
+    fprintf('\nStep 5: Saving the final parameter file...\n');
+    try
+        writetable(resultTable, outputFile);
+        fprintf('   -> Successfully saved parameters to "%s".\n', outputFile);
+    catch ME
+        error('Failed to write to output file. Ensure it is not open.\nMATLAB Error: %s', ME.message);
+    end
+    
+    % --- Step 6: VISUALIZE FINAL PARAMETER MAPS ---
+    fprintf('\nStep 6: Visualizing Final Generated Parameter Maps...\n');
+    output_path_base_params = fileparts(outputFile);
+    
+    % --- 6a. 2D Parameter Maps ---
+    fig2d = figure('Name', 'Generated Parameter Maps (2D)', 'WindowState', 'maximized');
+    t2d = tiledlayout(2, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
+    title(t2d, 'Final Parameter Maps for Optimization (2D)', 'FontSize', 16, 'FontWeight', 'bold');
+    
+    ax1 = nexttile;
+    scatter(ax1, coordinates(:,1), coordinates(:,2), 25, resultTable.Slope_Percent, 'filled');
+    title(ax1, 'Slope (%) - Cost'); xlabel(ax1, 'Easting (m)'); ylabel(ax1, 'Northing (m)');
+    colorbar(ax1); axis(ax1, 'equal', 'tight'); colormap(ax1, 'jet');
+
+    ax2 = nexttile;
+    scatter(ax2, coordinates(:,1), coordinates(:,2), 25, resultTable.RoadProximity_m, 'filled');
+    title(ax2, 'Road Proximity (m) - Cost'); xlabel(ax2, 'Easting (m)'); ylabel(ax2, 'Northing (m)');
+    colorbar(ax2); axis(ax2, 'equal', 'tight'); colormap(ax2, flipud(jet));
+
+    ax3 = nexttile;
+    scatter(ax3, coordinates(:,1), coordinates(:,2), 25, resultTable.SettlementProximity_m, 'filled');
+    title(ax3, 'Settlement Proximity (m) - Benefit'); xlabel(ax3, 'Easting (m)'); ylabel(ax3, 'Northing (m)');
+    colorbar(ax3); axis(ax3, 'equal', 'tight'); colormap(ax3, 'jet');
+    
+    ax4 = nexttile;
+    scatter(ax4, coordinates(:,1), coordinates(:,2), 25, resultTable.SensitiveAreaProximity_m, 'filled');
+    title(ax4, 'Sensitive Area Proximity (m) - Benefit'); xlabel(ax4, 'Easting (m)'); ylabel(ax4, 'Northing (m)');
+    colorbar(ax4); axis(ax4, 'equal', 'tight'); colormap(ax4, 'jet');
+    
+    saveas(fig2d, fullfile(output_path_base_params, ['Parameter_Maps_' name '_2D.png']));
+    fprintf('   -> 2D Parameter Maps saved successfully.\n');
+
+    % --- 6b. 3D Parameter Maps ---
+    fig3d = figure('Name', 'Generated Parameter Maps (3D)', 'WindowState', 'maximized');
+    t3d = tiledlayout(2, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
+    title(t3d, 'Final Parameter Maps for Optimization (3D)', 'FontSize', 16, 'FontWeight', 'bold');
+    
+    ax1_3d = nexttile;
+    scatter3(ax1_3d, coordinates(:,1), coordinates(:,2), coordinates(:,3), 25, resultTable.Slope_Percent, 'filled');
+    title(ax1_3d, 'Slope (%) - Cost'); colorbar(ax1_3d); axis(ax1_3d, 'equal', 'tight'); view(ax1_3d, -40, 25); colormap(ax1_3d, 'jet');
+
+    ax2_3d = nexttile;
+    scatter3(ax2_3d, coordinates(:,1), coordinates(:,2), coordinates(:,3), 25, resultTable.RoadProximity_m, 'filled');
+    title(ax2_3d, 'Road Proximity (m) - Cost'); colorbar(ax2_3d); axis(ax2_3d, 'equal', 'tight'); view(ax2_3d, -40, 25); colormap(ax2_3d, flipud(jet));
+
+    ax3_3d = nexttile;
+    scatter3(ax3_3d, coordinates(:,1), coordinates(:,2), coordinates(:,3), 25, resultTable.SettlementProximity_m, 'filled');
+    title(ax3_3d, 'Settlement Proximity (m) - Benefit'); colorbar(ax3_3d); axis(ax3_3d, 'equal', 'tight'); view(ax3_3d, -40, 25); colormap(ax3_3d, 'jet');
+    
+    ax4_3d = nexttile;
+    scatter3(ax4_3d, coordinates(:,1), coordinates(:,2), coordinates(:,3), 25, resultTable.SensitiveAreaProximity_m, 'filled');
+    title(ax4_3d, 'Sensitive Area Proximity (m) - Benefit'); colorbar(ax4_3d); axis(ax4_3d, 'equal', 'tight'); view(ax4_3d, -40, 25); colormap(ax4_3d, 'jet');
+    
+    saveas(fig3d, fullfile(output_path_base_params, ['Parameter_Maps_' name '_3D.png']));
+    fprintf('   -> 3D Parameter Maps saved successfully.\n');
+
+    fprintf('\nProcess completed successfully.\n');
+
+end % <<< END OF MAIN FUNCTION
+
+%==========================================================================
+%                       HELPER FUNCTIONS
+%==========================================================================
+
+%% --- User Interaction and Data Input Helpers ---
+function features = get_features_from_user(ax, feature_name, feature_type)
+    % This is the final, robust version that handles all three input methods
+    % (File, Interactive, Skip) flawlessly for all feature types.
+    
+    features = {}; 
+    question = sprintf('How would you like to define the "%s" layer?', feature_name);
+    title_str = 'Data Input Method';
+    btn1 = 'Load from File'; btn2 = 'Draw Interactively'; btn3 = 'Skip this Layer';
+    answer = questdlg(question, title_str, btn1, btn2, btn3, btn3);
+    
+    switch answer
+        case btn1 % Load from File
+            file_counter = 1;
+            while true
+                [file, path] = uigetfile({'*.xlsx';'*.csv'}, ...
+                    sprintf('Select File #%d for "%s" (or Cancel)', file_counter, feature_name));
+                if isequal(file, 0), break; end
+                
+                file_path = fullfile(path, file);
+                fprintf('   -> Processing file: "%s"...\n', file);
+                try
+                    data = readtable(file_path, 'PreserveVariableNames', true, 'TextType', 'string');
+                    [x_col, y_col, ~] = find_coord_columns(data.Properties.VariableNames);
+                    
+                    sort_col_names = {'SiraNo', 'sira', 'order', 'pointid', 'id', 'fid'};
+                    sort_col_found = intersect(sort_col_names, data.Properties.VariableNames, 'stable');
+                    if ~isempty(sort_col_found)
+                        sort_column_name = sort_col_found{1};
+                        if ~isnumeric(data.(sort_column_name)), data.(sort_column_name) = str2double(data.(sort_column_name)); end
+                        data = sortrows(data, sort_column_name);
+                        fprintf('      -> Data sorted by "%s" column.\n', sort_column_name);
+                    end
+                    
+                    feature_coords = data{:, {x_col, y_col}};
+                    min_points = 1 + (strcmp(feature_type, 'polyline')) + 2*(strcmp(feature_type, 'polygon'));
+
+                    if size(feature_coords, 1) >= min_points
+                        features{end+1} = feature_coords;
+                        hold(ax, 'on');
+                        % --- DÜZELTME BURADA: plot_feature çağrısı güncellendi ---
+                        plot_feature(ax, feature_coords, feature_type, 'b'); % 'b' for blue (file-loaded)
+                        hold(ax, 'off');
+                        fprintf('      -> Created a %d-point object from file.\n', size(feature_coords,1));
+                    else
+                        warning('File "%s" skipped (not enough points).', file);
+                    end
+                catch ME
+                    warning('Could not process file "%s".\nMATLAB Error: %s', file, ME.message);
+                end
+                
+                answer_continue = questdlg('Load another file for this layer?', 'Continue?', 'Yes', 'No', 'No');
+                if strcmp(answer_continue, 'No'), break; end
+                file_counter = file_counter + 1;
+            end
+            if file_counter > 1, fprintf('   -> File loading for "%s" complete.\n', feature_name); end
+
+        case btn2 % Draw Interactively
+            feature_counter = 1;
+            while true
+                current_coords = []; temp_plot_handles = [];
+                hold(ax, 'on');
+                title(ax, sprintf('Define "%s": Left-click to add points, press Enter to finish.', feature_name));
+                
+                while true
+                    try [xi, yi, button] = ginput(1);
+                    catch, break; end
+                    if isempty(button) || button ~= 1, break; end
+                    current_coords = [current_coords; xi, yi];
+                    h_pt = plot(ax, xi, yi, 'ro', 'MarkerSize', 8, 'MarkerFaceColor', 'r');
+                    temp_plot_handles = [temp_plot_handles, h_pt];
+                    if size(current_coords, 1) > 1 && ~strcmp(feature_type, 'point')
+                        h_line = plot(ax, current_coords(:,1), current_coords(:,2), 'r-');
+                        temp_plot_handles = [temp_plot_handles, h_line];
+                    end
+                    if strcmp(feature_type, 'point'), break; end
+                end
+                
+                title(ax, 'Define Spatial Constraint Layers (Follow Dialog Boxes)');
+                delete(temp_plot_handles);
+                
+                min_points = 1 + (strcmp(feature_type, 'polyline')) + 2*(strcmp(feature_type, 'polygon'));
+                if size(current_coords, 1) >= min_points
+                    features{end+1} = current_coords;
+                    plot_feature(ax, current_coords, feature_type, 'r'); % 'r' for red (interactively drawn)
+                    fprintf('      -> Object #%d for "%s" successfully added.\n', feature_counter, feature_name);
+                    feature_counter = feature_counter + 1;
+                else
+                    fprintf('      -> Not enough points were selected. Object not added.\n');
+                end
+                
+                answer_continue = questdlg('Draw another object for this layer?', 'Continue?', 'Yes', 'No', 'No');
+                if strcmp(answer_continue, 'No'), break; end
+            end
+            fprintf('   -> Interactive drawing for "%s" complete.\n', feature_name);
+        
+        case {btn3, ''} % Skip or Close
+            fprintf('   -> Skipping layer: "%s".\n', feature_name);
+    end
+end
+
+
+function plot_feature(ax, coords, type, color_char)
+    % Plots a geographic feature on the given axes.
+    if strcmp(type, 'point'), plot(ax, coords(:,1), coords(:,2), [color_char 'p'], 'MarkerSize', 15, 'MarkerFaceColor', color_char);
+    elseif strcmp(type, 'polyline'), plot(ax, coords(:,1), coords(:,2), [color_char '-o'], 'LineWidth', 2);
+    elseif strcmp(type, 'polygon'), plot(ax, [coords(:,1); coords(1,1)], [coords(:,2); coords(1,2)], [color_char '-o'], 'LineWidth', 2); end
+end
+
+%% --- Calculation Helpers ---
+function [x_col, y_col, z_col] = find_coord_columns(var_names)
+    % This is the final, robust version.
+    var_names_lower = lower(var_names);
+    x_patterns = {'x', 'easting'}; y_patterns = {'y', 'northing'}; z_patterns = {'z', 'elevation', 'h'};
+    x_idx = find(contains(var_names_lower, x_patterns), 1, 'first');
+    y_idx = find(contains(var_names_lower, y_patterns), 1, 'first');
+    z_idx = find(contains(var_names_lower, z_patterns), 1, 'first');
+    if isempty(x_idx) || isempty(y_idx) || isempty(z_idx), error('Could not find X/Easting, Y/Northing, or Z/Elevation columns.'); end
+    x_col = var_names{x_idx}; y_col = var_names{y_idx}; z_col = var_names{z_idx};
+end
+
+function slopes = calculate_slopes(coordinates)
+    % This is the final, robust version.
+    [idx, ~] = knnsearch(coordinates(:,1:2), coordinates(:,1:2), 'K', 6);
+    idx = idx(:, 2:end);
+    slopes = zeros(size(coordinates,1), 1);
+    for i = 1:size(coordinates,1)
+        neighbor_coords = coordinates(idx(i,:), :);
+        delta_z = abs(neighbor_coords(:,3) - coordinates(i,3));
+        dist_xy = sqrt(sum((neighbor_coords(:,1:2) - coordinates(i,1:2)).^2, 2));
+        slopes_to_neighbors = (delta_z ./ (dist_xy + 1e-9)) * 100;
+        slopes(i) = max(slopes_to_neighbors);
+    end
+end
+
+function min_dists = calculate_min_dist_to_features(coordinates, features, feature_type)
+    % This is the final, robust version.
+    num_nodes = size(coordinates, 1);
+    min_dists = ones(num_nodes, 1) * inf;
+    if isempty(features), return; end
+    
+    for i = 1:num_nodes
+        point_xy = coordinates(i, 1:2);
+        min_dist_for_node = inf;
+        for f = 1:length(features)
+            feature_coords = features{f};
+            dist = 0;
+            if strcmp(feature_type, 'point'), dist = min(sqrt(sum((feature_coords - point_xy).^2, 2)));
+            elseif strcmp(feature_type, 'polyline')
+                min_dist_to_polyline = inf;
+                for s = 1:(size(feature_coords, 1) - 1), d_seg = point_to_line_segment(point_xy, feature_coords(s, :), feature_coords(s+1, :)); min_dist_to_polyline = min(min_dist_to_polyline, d_seg); end
+                dist = min_dist_to_polyline;
+            elseif strcmp(feature_type, 'polygon')
+                [in, on] = inpolygon(point_xy(1), point_xy(2), feature_coords(:,1), feature_coords(:,2));
+                if in || on, dist = 0;
+                else
+                    min_dist_to_polygon_edge = inf;
+                    for s = 1:size(feature_coords, 1), p1 = feature_coords(s,:); p2 = feature_coords(mod(s, size(feature_coords, 1)) + 1, :); d_seg = point_to_line_segment(point_xy, p1, p2); min_dist_to_polygon_edge = min(min_dist_to_polygon_edge, d_seg); end
+                    dist = min_dist_to_polygon_edge;
+                end
+            end
+            min_dist_for_node = min(min_dist_for_node, dist);
+        end
+        min_dists(i) = min_dist_for_node;
+    end
+end
+
+function dist = point_to_line_segment(pt, v, w)
+    % This is a standard geometric function.
+    l2 = sum((v-w).^2);
+    if l2 == 0.0, dist = sqrt(sum((pt-v).^2)); return; end
+    t = max(0, min(1, dot(pt - v, w - v) / l2));
+    projection = v + t * (w - v);
+    dist = sqrt(sum((pt - projection).^2));
+end
+
+%% --- Visualization Helpers ---
+function [X_grid, Y_grid, Z_grid] = create_dem_grid(coordinates)
+    % This is the final, robust version.
+    xi = linspace(min(coordinates(:,1)), max(coordinates(:,1)), 150);
+    yi = linspace(min(coordinates(:,2)), max(coordinates(:,2)), 150);
+    [X_grid, Y_grid] = meshgrid(xi, yi);
+    try
+        F_dem = scatteredInterpolant(coordinates(:,1), coordinates(:,2), coordinates(:,3), 'natural');
+        Z_grid = F_dem(X_grid, Y_grid);
+        Z_grid = fillmissing(Z_grid, 'nearest');
+    catch
+        Z_grid = nan(size(X_grid)); warning('Could not create DEM grid.');
+    end
+end
+
+function plot_input_layers_2d(coordinates, roads, settlements, sensitive_areas, save_path)
+    % This is the final, robust version.
+    fig = figure('Name', 'Input Data Layers (2D View)', 'Position', [50, 50, 900, 750]);
+    ax = axes(fig); hold(ax, 'on');
+    h_nodes = plot(ax, coordinates(:,1), coordinates(:,2), '.', 'Color', [0.8 0.8 0.8], 'MarkerSize', 5, 'DisplayName', 'Potential Nodes');
+    colors = {[0 0.4 0.8], [0.8 0 0], [0.5 0 0.5]}; legend_handles = [h_nodes];
+    if ~isempty(roads), h_road = plot(ax, roads{1}(:,1), roads{1}(:,2), '-', 'Color', colors{1}, 'LineWidth', 2, 'DisplayName', 'Existing Road Network'); legend_handles(end+1) = h_road; for i = 2:length(roads), plot(ax, roads{i}(:,1), roads{i}(:,2), '-', 'Color', colors{1}, 'LineWidth', 2, 'HandleVisibility', 'off'); end, end
+    if ~isempty(settlements), all_settlements = vertcat(settlements{:}); h_settle = plot(ax, all_settlements(:,1), all_settlements(:,2), 'p', 'MarkerSize', 14, 'MarkerEdgeColor', 'k', 'MarkerFaceColor', colors{2}, 'DisplayName', 'Settlement Areas'); legend_handles(end+1) = h_settle; end
+    if ~isempty(sensitive_areas), h_sensitive = fill(ax, sensitive_areas{1}(:,1), sensitive_areas{1}(:,2), colors{3}, 'FaceAlpha', 0.4, 'EdgeColor', colors{3}, 'LineWidth', 1.5, 'DisplayName', 'Sensitive Areas'); legend_handles(end+1) = h_sensitive; for i = 2:length(sensitive_areas), fill(ax, sensitive_areas{i}(:,1), sensitive_areas{i}(:,2), colors{3}, 'FaceAlpha', 0.4, 'EdgeColor', colors{3}, 'LineWidth', 1.5, 'HandleVisibility', 'off'); end, end
+    title('Spatial Distribution of Input Criteria Layers'); xlabel('Easting (m)'); ylabel('Northing (m)');
+    axis(ax, 'equal', 'tight'); grid(ax, 'on'); set(ax, 'GridLineStyle', ':', 'GridColor', [0.3 0.3 0.3], 'GridAlpha', 0.5); box(ax, 'on');
+    if ~isempty(legend_handles), legend(ax, legend_handles, 'Location', 'best'); end
+    saveas(fig, save_path);
+end
+
+function plot_input_layers_3d(coordinates, roads, settlements, sensitive_areas, save_path)
+    % This is the final, robust version.
+    [X_grid, Y_grid, Z_grid] = create_dem_grid(coordinates);
+    fig = figure('Name', 'Input Data Layers (3D View)', 'WindowState', 'maximized', 'Color', [0.1 0.1 0.15]);
+    ax = axes(fig, 'Color', 'none', 'XColor', 'w', 'YColor', 'w', 'ZColor', 'w', 'GridColor', 'w', 'GridAlpha', 0.25); hold(ax, 'on');
+    if ~all(isnan(Z_grid(:))), surf(ax, X_grid, Y_grid, Z_grid, 'EdgeColor', 'none', 'FaceAlpha', 0.8, 'HandleVisibility', 'off'); colormap(ax, 'jet'); camlight(ax, 'headlight'); lighting(ax, 'gouraud'); material(ax, 'dull'); end
+    road_color = [1 1 0]; settlement_color = [1 0.2 0.2]; sensitive_color = [0.6 0.2 1]; legend_handles = [];
+    if ~isempty(roads), h_road = plot3(ax, roads{1}(:,1), roads{1}(:,2), interp2(X_grid, Y_grid, Z_grid, roads{1}(:,1), roads{1}(:,2), 'linear') + 5, '-', 'Color', road_color, 'LineWidth', 3, 'DisplayName', 'Existing Road Network'); legend_handles(end+1) = h_road; for i = 2:length(roads), plot3(ax, roads{i}(:,1), roads{i}(:,2), interp2(X_grid, Y_grid, Z_grid, roads{i}(:,1), roads{i}(:,2), 'linear') + 5, '-', 'Color', road_color, 'LineWidth', 3, 'HandleVisibility', 'off'); end, end
+    if ~isempty(settlements), all_settlements = vertcat(settlements{:}); h_settle = plot3(ax, all_settlements(:,1), all_settlements(:,2), interp2(X_grid, Y_grid, Z_grid, all_settlements(:,1), all_settlements(:,2), 'linear') + 10, 'p', 'MarkerSize', 16, 'MarkerFaceColor', settlement_color, 'MarkerEdgeColor', 'w', 'DisplayName', 'Settlement Areas'); legend_handles(end+1) = h_settle; end
+    if ~isempty(sensitive_areas), h_sensitive = fill3(ax, sensitive_areas{1}(:,1), sensitive_areas{1}(:,2), interp2(X_grid, Y_grid, Z_grid, sensitive_areas{1}(:,1), sensitive_areas{1}(:,2), 'linear'), sensitive_color, 'FaceAlpha', 0.5, 'EdgeColor', 'none', 'DisplayName', 'Sensitive Areas'); legend_handles(end+1) = h_sensitive; for i = 2:length(sensitive_areas), fill3(ax, sensitive_areas{i}(:,1), sensitive_areas{i}(:,2), interp2(X_grid, Y_grid, Z_grid, sensitive_areas{i}(:,1), sensitive_areas{i}(:,2), 'linear'), sensitive_color, 'FaceAlpha', 0.5, 'EdgeColor', 'none', 'HandleVisibility', 'off'); end, end
+    title('3D Visualization of Input Criteria Layers'); xlabel('Easting (m)'); ylabel('Northing (m)'); zlabel('Elevation (m)');
+    axis(ax, 'equal', 'tight'); grid(ax, 'on'); box(ax, 'on'); view(ax, -40, 25);
+    if ~isempty(legend_handles), legend(ax, legend_handles, 'Location', 'northeastoutside', 'TextColor', 'w', 'Color', [0.2 0.2 0.2 0.7]); end
+    saveas(fig, save_path);
+end
