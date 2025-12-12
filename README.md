@@ -1,6 +1,4 @@
 # Route-Optimization-ISPA
-Route-Optimization-ISPA
-# Multi-Criteria Route Optimization using GIS and MCDM Methods
 
 ## Overview
 
