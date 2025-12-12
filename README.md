@@ -4,15 +4,17 @@ Route-Optimization-ISPA
 
 ## Overview
 
-This repository contains the complete MATLAB codebase for the research paper titled: **"[Article Title Placeholder]"**, published in/submitted to **"[Iterative Score Propagation Algorithm (ISPA): A GNN-Inspired Framework for Multi-Criteria Route Design with Engineering Applications]"**. The project presents an integrated methodological framework for optimal route selection by synergizing Geographic Information Systems (GIS) with a portfolio of Multi-Criteria Decision Making (MCDM) techniques.
+This repository contains the complete MATLAB codebase for the research paper titled: **"Iterative Score Propagation Algorithm (ISPA): A GNN-Inspired Framework for Multi-Criteria Route Design with Engineering Applications,"** published open access in the **ISPRS International Journal of Geo-Information (IJGI)**. The project presents an integrated methodological framework for optimal route selection by synergizing Geographic Information Systems (GIS) with Multi-Criteria Decision Making (MCDM) techniques. 
 
 The primary contribution of this work is a comparative analysis of four distinct suitability scoring methods:
-1.  **AHP** (Analytic Hierarchy Process) as a Weighted Linear Combination
-2.  **TOPSIS** (Technique for Order of Preference by Similarity to Ideal Solution)
-3.  **VIKOR** (VlseKriterijumska Optimizacija I Kompromisno Resenje)
-4.  **ISPA** (Iterative Score Propagation Algorithm), a novel GNN-inspired method for spatial contextualization.
 
-This codebase is provided to ensure the **transparency**, **reproducibility**, and **extensibility** of our research.
+**Suitability Scoring Methods:** 
+1. **AHP** (Analytic Hierarchy Process) as a Weighted Linear Combination (WLC) 
+2. **TOPSIS** (Technique for Order of Preference by Similarity to Ideal Solution) 
+3. **VIKOR** (VlseKriterijumska Optimizacija I Kompromisno Resenje) 
+4. **ISPA** (Iterative Score Propagation Algorithm), a novel GNN-inspired method for spatial contextualization. 
+
+This codebase is provided to ensure the **transparency**, **reproducibility**, and **extensibility** of **this research**.
 
 ---
 
@@ -81,19 +83,20 @@ This is the main module that performs the multi-method analysis and generates th
 
 If you use this code in your research, please cite our paper:
 
-[**Your Name(s). (Year). Article Title. *Journal Name*, Volume(Issue), pages. https://doi.org/your_doi_link**]
+Pehlivan, H. Iterative Score Propagation Algorithm (ISPA): A GNN-Inspired Framework for Multi-Criteria Route Design with Engineering Applications. *ISPRS Int. J. Geo-Inf.* 2025, *14*(12), 484. https://doi.org/10.3390/ijgi14120484
 
-```bibtex
-@article{Pehlivan2025,
-  title   = {{Article Title}},
-  author  = {Your, Name and Coauthor, Name},
-  journal = {Journal Name},
-  year    = {Year},
-  volume  = {XX},
-  number  = {X},
-  pages   = {XXX--XXX},
-  doi     = {your_doi_link}
+### BibTeX Citation 
+@article{Pehlivan2025ISPA, 
+title = {Iterative Score Propagation Algorithm (ISPA): A GNN-Inspired Framework for Multi-Criteria Route Design with Engineering Applications}, 
+author = {Pehlivan, Hüseyin}, 
+journal = {ISPRS International Journal of Geo-Information}, 
+year = {2025}, 
+volume = {14}, 
+number = {12}, 
+pages = {484}, 
+doi = {10.3390/ijgi14120484} 
 }
+
 ```
 
 ## License
