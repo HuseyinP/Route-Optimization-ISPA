@@ -1,0 +1,14 @@
+PROJECT 1 GITHUB COLLECTOR v2
+================================================================================
+Generated: 2026-08-29T11:36:33
+Output: C:\IEEE\GitHUb_files_v2
+Report rows: 55
+Unresolved required/selected items: 1
+
+[MISSING] GNSS_ANALYSIS\REVIEWER_COMMENT8_CMC_DETREND_V1\COMMENT8_CURRENT_CMC_ARC_DEPENDENCE.csv
+
+Raw RINEX expected/copied: 12
+Production config expected: 3
+Comment-10 source: PUBLICATION_TABLES_V1_1
+Code preference: PY_CODES
+Manuscript preference: Yazım\REVIEW_II\SUBMISSION

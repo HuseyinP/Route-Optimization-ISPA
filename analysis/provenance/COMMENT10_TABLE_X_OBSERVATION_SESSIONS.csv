@@ -1,0 +1,13 @@
+﻿Test,Receiver,Receiver class,Receiver ID,Date,Observation period,Nominal span (min),Effective observation (min),Epochs,Interval (s),Retention (%),Data continuity / qualification
+Test-1,CHC I80,Geodetic,CHC1,5 June 2023,09:05:29–10:38:49,93.33,93.33,5601,1.000,100.00,Continuous within the audited 1-s epoch structure.
+Test-1,TRIMBLE OEM MB2,OEM,OEM1,5 June 2023,09:02:00–10:59:21,117.35,20.80,1253,1.000,17.79,Intermittent/degraded; retained as stress-test evidence. Nominal recording span is not treated as continuous observation duration.
+Test-1,XIAOMI-1,Smartphone,T11,5 June 2023,09:08:38–10:36:21,87.72,76.05,4567,1.000,86.76,"Intermittent recording; 3 gap(s), largest 304.0 s."
+Test-1,XIAOMI-2,Smartphone,T21,5 June 2023,09:08:38–10:36:37,87.98,78.85,4736,1.000,89.70,"Intermittent recording; 4 gap(s), largest 166.0 s."
+Test-2,CHC I80,Geodetic,CHC2,5 June 2023,10:39:09–12:05:41,86.53,86.53,5193,1.000,100.00,Continuous within the audited 1-s epoch structure.
+Test-2,TRIMBLE OEM MB2,OEM,OEM2,5 June 2023,11:05:35–12:05:00,59.42,59.42,3566,1.000,100.00,Continuous within the audited 1-s epoch structure.
+Test-2,XIAOMI-1,Smartphone,T12,5 June 2023,11:03:56–12:05:58,62.03,62.03,3723,1.000,100.00,Continuous within the audited 1-s epoch structure.
+Test-2,XIAOMI-2,Smartphone,T22,5 June 2023,11:03:27–12:05:25,61.97,51.52,3095,1.000,83.22,"Intermittent recording; 2 gap(s), largest 370.0 s."
+Test-3,CHC I80,Geodetic,CHC3,5 June 2023,12:08:11–13:09:10,60.98,60.98,3660,1.000,100.00,Continuous within the audited 1-s epoch structure.
+Test-3,TRIMBLE OEM MB2,OEM,OEM3,5 June 2023,12:08:39–13:01:44,53.08,53.08,3186,1.000,100.00,Continuous within the audited 1-s epoch structure.
+Test-3,XIAOMI-1,Smartphone,T13,5 June 2023,12:08:02–13:09:02,61.00,53.29,3200,1.000,87.41,"Intermittent recording; 1 gap(s), largest 462.0 s."
+Test-3,XIAOMI-2,Smartphone,T23,5 June 2023,12:08:29–13:09:23,60.90,56.43,3388,1.000,92.69,"Intermittent recording; 1 gap(s), largest 268.0 s."

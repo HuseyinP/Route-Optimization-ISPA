@@ -1,0 +1,39 @@
+GNSS Comment 10 — Publication Tables v1.1
+================================================================================================
+
+TABLE X — OBSERVATION SESSIONS AND DATASET CHARACTERISTICS
+------------------------------------------------------------------------------------------------
+Test-1 | CHC1 | Geodetic   | 09:05:29–10:38:49 | nominal=93.33 min | effective=93.33 min | N=5601 | Continuous within the audited 1-s epoch structure.
+Test-1 | OEM1 | OEM        | 09:02:00–10:59:21 | nominal=117.35 min | effective=20.80 min | N=1253 | Intermittent/degraded; retained as stress-test evidence. Nominal recording span is not treated as continuous observation duration.
+Test-1 | T11  | Smartphone | 09:08:38–10:36:21 | nominal=87.72 min | effective=76.05 min | N=4567 | Intermittent recording; 3 gap(s), largest 304.0 s.
+Test-1 | T21  | Smartphone | 09:08:38–10:36:37 | nominal=87.98 min | effective=78.85 min | N=4736 | Intermittent recording; 4 gap(s), largest 166.0 s.
+Test-2 | CHC2 | Geodetic   | 10:39:09–12:05:41 | nominal=86.53 min | effective=86.53 min | N=5193 | Continuous within the audited 1-s epoch structure.
+Test-2 | OEM2 | OEM        | 11:05:35–12:05:00 | nominal=59.42 min | effective=59.42 min | N=3566 | Continuous within the audited 1-s epoch structure.
+Test-2 | T12  | Smartphone | 11:03:56–12:05:58 | nominal=62.03 min | effective=62.03 min | N=3723 | Continuous within the audited 1-s epoch structure.
+Test-2 | T22  | Smartphone | 11:03:27–12:05:25 | nominal=61.97 min | effective=51.52 min | N=3095 | Intermittent recording; 2 gap(s), largest 370.0 s.
+Test-3 | CHC3 | Geodetic   | 12:08:11–13:09:10 | nominal=60.98 min | effective=60.98 min | N=3660 | Continuous within the audited 1-s epoch structure.
+Test-3 | OEM3 | OEM        | 12:08:39–13:01:44 | nominal=53.08 min | effective=53.08 min | N=3186 | Continuous within the audited 1-s epoch structure.
+Test-3 | T13  | Smartphone | 12:08:02–13:09:02 | nominal=61.00 min | effective=53.29 min | N=3200 | Intermittent recording; 1 gap(s), largest 462.0 s.
+Test-3 | T23  | Smartphone | 12:08:29–13:09:23 | nominal=60.90 min | effective=56.43 min | N=3388 | Intermittent recording; 1 gap(s), largest 268.0 s.
+
+TABLE SX — PRECISE PRODUCT PROVENANCE
+------------------------------------------------------------------------------------------------
+CODE | FIN | ORB=COD0MGXFIN_20231560000_01D_05M_ORB.SP3 | CLK=COD0MGXFIN_20231560000_01D_30S_CLK.CLK | BIA=COD0MGXFIN_20231560000_01D_01D_OSB.BIA | GPS week=2265 | DOY=156
+GFZ  | RAP | ORB=GFZ0MGXRAP_20231560000_01D_05M_ORB.SP3 | CLK=GFZ0MGXRAP_20231560000_01D_30S_CLK.CLK | BIA=GFZ0MGXRAP_20231560000_01D_01D_OSB.BIA | GPS week=2265 | DOY=156
+GRG  | FIN | ORB=GRG0MGXFIN_20231560000_01D_05M_ORB.SP3 | CLK=GRG0MGXFIN_20231560000_01D_30S_CLK.CLK | BIA=GRG0MGXFIN_20231560000_01D_01D_OSB.BIA | GPS week=2265 | DOY=156
+IGS  | FIN | ORB=IGS0OPSFIN_20231560000_01D_15M_ORB.SP3 | CLK=IGS0OPSFIN_20231560000_01D_30S_CLK.CLK | BIA=— | GPS week=2265 | DOY=156
+JAX  | FIN | ORB=JAX0MGXFIN_20231560000_01D_05M_ORB.SP3 | CLK=JAX0MGXFIN_20231560000_01D_30S_CLK.CLK | BIA=— | GPS week=2265 | DOY=156
+WHU  | RAP | ORB=WUM0MGXRAP_20231560000_01D_05M_ORB.SP3 | CLK=WUM0MGXRAP_20231560000_01D_30S_CLK.CLK | BIA=WUM0MGXRAP_20231560000_01D_01D_OSB.BIA | GPS week=2265 | DOY=156
+
+BROADCAST NAVIGATION
+------------------------------------------------------------------------------------------------
+Broadcast multi-GNSS navigation | BRDM00DLR_S_20231560000_01D_MN.rnx | GPS week=2265 | DOY=156
+
+MANUSCRIPT NOTES
+------------------------------------------------------------------------------------------------
+1) Table X belongs in the main manuscript because it defines the 12 physical datasets.
+2) Table Sx is best placed in Supplementary Materials to preserve exact filename provenance without overloading the Methods section.
+3) ANTEX files are intentionally excluded here and remain documented under Comment 9 antenna-model sensitivity/provenance.
+4) OEM1 must be described as a 117.35-min recording span containing approximately 20.80 min of effective observations, not as a continuous 117-min session.
+5) All study observations/products correspond to 5 June 2023, GPS week 2265, DOW 1, DOY 156.
+6) Exact filenames are transferred automatically from the audited provenance CSVs; no manual filename transcription is used.

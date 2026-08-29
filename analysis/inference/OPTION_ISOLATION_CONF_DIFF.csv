@@ -1,0 +1,11 @@
+﻿Scenario,Key,Baseline,Variant,Allowed
+A_NONE_NONE,file-satantfile,C:\IEEE\IGS_Products\igs20_2361.atx,,True
+A_NONE_NONE,pos1-posopt1,on,off,True
+A_NONE_NONE,pos1-posopt2,on,off,True
+B_SAT_ON_RCV_OFF,file-satantfile,C:\IEEE\IGS_Products\igs20_2361.atx,C:\IEEE\RTKLIB-b34k\bin\igs20.atx,True
+B_SAT_ON_RCV_OFF,pos1-posopt2,on,off,True
+C_SAT_OFF_RCV_ON,file-rcvantfile,,C:\IEEE\RTKLIB-b34k\bin\igs20.atx,True
+C_SAT_OFF_RCV_ON,file-satantfile,C:\IEEE\IGS_Products\igs20_2361.atx,,True
+C_SAT_OFF_RCV_ON,pos1-posopt1,on,off,True
+D_SAT_ON_RCV_ON,file-rcvantfile,,C:\IEEE\RTKLIB-b34k\bin\igs20.atx,True
+D_SAT_ON_RCV_ON,file-satantfile,C:\IEEE\IGS_Products\igs20_2361.atx,C:\IEEE\RTKLIB-b34k\bin\igs20.atx,True

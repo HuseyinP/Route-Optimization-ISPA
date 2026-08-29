@@ -1,0 +1,2 @@
+﻿Dataset_N,Median_dt_1s_N,Nominal_interval_1s_N,Header_interval_present_N,Header_interval_missing_N,All_empirically_1s,All_nominally_1s,Min_retention_pct,Max_retention_pct,Low_retention_dataset
+12,12,12,6,6,True,True,14.59214501510574,100.0,OEM1

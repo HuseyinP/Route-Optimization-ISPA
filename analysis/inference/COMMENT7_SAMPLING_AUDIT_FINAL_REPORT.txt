@@ -1,0 +1,31 @@
+====================================================================================================
+PROJECT 1 — REVIEWER COMMENT 7 FINAL SAMPLING AUDIT
+====================================================================================================
+Generated: 2026-08-19T22:14:55
+
+AUTHORITATIVE INPUT
+  C:\IEEE\GNSS_ANALYSIS\STAGE1_RINEX_V2_2\GNSS_STAGE1_RINEX_PARSER_QC.csv
+  SHA256: 5e60c444cd4c5507462b027b9fdfddab8087fcae70211752ded3882e0283af13
+  rows: 12
+
+LOCKED RESULTS
+  Physical datasets                 : 12 / 12  PASS
+  Empirical median interval = 1 s   : 12 / 12  PASS
+  Nominal Stage-1 interval = 1 s    : 12 / 12  PASS
+  Header interval present           : 6 / 12
+  Header interval missing           : 6 / 12
+  Minimum epoch retention           : 14.592145015106%
+  Minimum-retention dataset         : OEM1
+  OEM1 epoch retention              : 14.592145015106%
+
+INTERPRETATION LOCK
+  Transition-normalized carrier-phase discontinuity rates and phase-arc durations share common 1-s temporal support.
+  OEM1 low retention reflects missing epochs over the session span, not a lower-rate logging stream.
+  Epoch retention remains a separate observation-availability metric.
+
+OUTPUTS
+  C:\IEEE\GNSS_ANALYSIS\REVIEWER_COMMENT7_SAMPLING_V1\COMMENT7_SAMPLING_INTERVAL_HARMONIZATION.csv
+  C:\IEEE\GNSS_ANALYSIS\REVIEWER_COMMENT7_SAMPLING_V1\COMMENT7_SAMPLING_SUMMARY.csv
+
+FINAL STATUS: PASS
+====================================================================================================

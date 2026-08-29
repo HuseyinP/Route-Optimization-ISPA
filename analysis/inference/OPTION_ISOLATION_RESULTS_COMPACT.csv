@@ -1,0 +1,5 @@
+﻿Scenario,SatCorr,RcvCorr,ExitCode,POS_Size,Diagnostics,Status
+A_NONE_NONE,off,off,0,818208,,PASS
+B_SAT_ON_RCV_OFF,on,off,0,818208,,PASS
+C_SAT_OFF_RCV_ON,off,on,0,818208,,PASS
+D_SAT_ON_RCV_ON,on,on,0,818208,,PASS

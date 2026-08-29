@@ -1,0 +1,24 @@
+GNSS ANTEX Option Isolation Audit v1.2
+============================================================================
+
+RTKLIB EXE : C:\IEEE\RTKLIB-b34k\bin\rnx2rtkp.exe
+EXE SHA256 : 042D2175CD022F312C172C2918DC6F11E9CAFC96FDFB1403D33E54CB87A4EF03
+Base conf  : C:\IEEE\CONF_Files\conf_June5_2023_GEODETIC_CHC_I80.conf
+Provenance : C:\IEEE\GNSS_ANALYSIS\ANTEX_SENSITIVITY_V1\PROVENANCE_NORMALIZED_PREFILTER.csv
+OBS        : C:\IEEE\RAW_DATA\Test1\CHC1.23O
+SAT ANTEX  : C:\IEEE\RTKLIB-b34k\bin\igs20.atx
+
+RESULTS
+----------------------------------------------------------------------------
+A_NONE_NONE: PASS | sat=off | rcv=off | exit=0 | pos_size=818208
+B_SAT_ON_RCV_OFF: PASS | sat=on | rcv=off | exit=0 | pos_size=818208
+C_SAT_OFF_RCV_ON: PASS | sat=off | rcv=on | exit=0 | pos_size=818208
+D_SAT_ON_RCV_ON: PASS | sat=on | rcv=on | exit=0 | pos_size=818208
+
+DECISION
+----------------------------------------------------------------------------
+ALL_PASS
+
+CANONICAL-CONFIG RULE
+----------------------------------------------------------------------------
+Target option/file lines were written in compact RTKLIB syntax without spaces around '=' and without inline comments. Any remaining 'invalid option value' therefore cannot be attributed to the previous generated-line spacing pattern.

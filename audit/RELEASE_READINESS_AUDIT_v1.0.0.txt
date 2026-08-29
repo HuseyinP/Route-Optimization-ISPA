@@ -1,0 +1,15 @@
+PROJECT 1 — GITHUB / ZENODO RELEASE READINESS AUDIT v1.0.0
+======================================================================
+Status: PASS
+
+Public-release policy:
+- Unpublished manuscript files: intentionally excluded.
+- Machine-readable Supplementary Tables S1-S6: retained.
+- Reproducibility data/code/config/provenance: retained.
+- Metadata files: .zenodo.json and CITATION.cff retained and synchronized.
+- License: MIT.
+- Affiliation: not supplied; omitted rather than represented by an empty placeholder.
+- Repository URL and DOI: not fabricated before GitHub/Zenodo assignment.
+
+The public archive is intended to support reproducibility without distributing
+the unpublished manuscript text.

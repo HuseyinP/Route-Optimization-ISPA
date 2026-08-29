@@ -1,0 +1,45 @@
+GNSS Comment 12 — Numerical Consistency Audit v1
+================================================================================================
+
+NUMERICAL SOURCE-OF-TRUTH POLICY
+------------------------------------------------------------------------------------------------
+PRIMARY INFERENCE:
+  Product-adjusted + exact Test-blocked permutation.
+
+ROBUSTNESS EVIDENCE:
+  Unadjusted exact Test-blocked permutation; LOTO; fixed-Test-effect residual analysis.
+
+DESCRIPTIVE CLUSTERING DIAGNOSTIC:
+  Within/between-Test variance + ICC(Test).
+
+PRIMARY NUMERICAL LOCK
+------------------------------------------------------------------------------------------------
+CMC_P95 -> horizontal RMSE: rho=0.818182 | exact p=0.006944 | N=11 | permutations=3456
+CMC_ROBUST -> horizontal RMSE: rho=0.836364 | exact p=0.004919 | N=11 | permutations=3456
+CN0 -> horizontal RMSE: rho=-0.744877 | exact p=0.017072 | N=11 | permutations=3456
+
+UNADJUSTED ROBUSTNESS LOCK
+------------------------------------------------------------------------------------------------
+CMC_P95 -> horizontal RMSE: rho=0.845455 | exact p=0.003472
+CMC_ROBUST -> horizontal RMSE: rho=0.790909 | exact p=0.004919
+CN0 -> horizontal RMSE: rho=-0.790857 | exact p=0.004919
+
+Q-VALUE POLICY
+------------------------------------------------------------------------------------------------
+No q-value is created by this script. The finalized Comment-11 dependence-aware source contains exact blocked-permutation p-values. Any rho/q pair elsewhere in the manuscript must be linked to a separate, explicitly named final multiple-testing source. Otherwise the q-value must not be copied into the final text.
+
+CONSISTENCY GATE FOR THE NEXT STEP
+------------------------------------------------------------------------------------------------
+1) CMC_P95 must never be substituted for CMC_ROBUST.
+2) PRODUCT_ADJUSTED primary values must never be silently replaced by UNADJUSTED robustness values.
+3) The locked outcome here is horizontal / 2D RMSE.
+4) Abstract, Results, Discussion and Conclusions must use the same primary rho/p pair when making the same primary claim.
+5) LOTO/fixed-effect/ICC numbers must be labelled as robustness or descriptive diagnostics, not primary inference.
+6) A q-value requires an explicit final source and correction method; it is not inferred from p.
+
+SOURCE FILES
+------------------------------------------------------------------------------------------------
+C:\IEEE\GNSS_ANALYSIS\COMMENT11_CLUSTER_DEPENDENCE_AUDIT_V1_1\COMMENT11_V1_1_BLOCKED_PERMUTATION.csv
+C:\IEEE\GNSS_ANALYSIS\COMMENT11_CLUSTER_DEPENDENCE_AUDIT_V1_1\COMMENT11_V1_1_LOTO_SENSITIVITY.csv
+C:\IEEE\GNSS_ANALYSIS\COMMENT11_CLUSTER_DEPENDENCE_AUDIT_V1_1\COMMENT11_V1_1_FIXED_TEST_EFFECT.csv
+C:\IEEE\GNSS_ANALYSIS\COMMENT11_CLUSTER_DEPENDENCE_AUDIT_V1_1\COMMENT11_V1_1_VARIANCE_ICC.csv
